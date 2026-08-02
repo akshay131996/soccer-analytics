@@ -52,6 +52,26 @@ def crops_from(frame, det):
     return [sv.crop_image(frame, xyxy) for xyxy in det.xyxy.astype(int)]
 
 
+def collect_crops(model, source, player_ids, target=200, max_scan=120,
+                  imgsz=1280, conf=0.3, verbose=True):
+    """Gather player crops for fitting the team clusters.
+
+    Scans until it has `target` crops rather than reading a fixed number of frames.
+    A fixed count is fragile: a clip can easily open on a crowd shot, a replay or an
+    empty pitch, and you end up trying to fit k-means on nothing. Scanning until the
+    quota is met -- or the budget runs out -- works on any footage.
+    """
+    crops = []
+    for i, frame in enumerate(sv.get_video_frames_generator(source)):
+        if i >= max_scan or len(crops) >= target:
+            break
+        det = sv.Detections.from_ultralytics(model(frame, conf=conf, imgsz=imgsz, verbose=False)[0])
+        crops += crops_from(frame, det[np.isin(det.class_id, player_ids)])
+    if verbose:
+        print(f"collected {len(crops)} player crops from {min(i + 1, max_scan)} frames")
+    return crops
+
+
 def process_video(
     source: str,
     output_path: str,
@@ -102,15 +122,10 @@ def process_video(
     # k-means cannot predict before it has been fitted, and the two kit colours are
     # not known until players have been observed -- hence reading the clip twice.
     teams = TeamClassifier(embedder)
-    fit_crops = []
-    for i, frame in enumerate(sv.get_video_frames_generator(source)):
-        if i >= fit_frames:
-            break
-        det = sv.Detections.from_ultralytics(model(frame, conf=conf, imgsz=imgsz, verbose=False)[0])
-        fit_crops += crops_from(frame, det[np.isin(det.class_id, player_ids)])
-    if len(fit_crops) < 4:
-        raise SystemExit("too few players detected to cluster teams — check the clip or weights")
-    teams.fit(fit_crops)
+    fit_crops = collect_crops(model, source, player_ids, target=200,
+                              max_scan=max(fit_frames * 6, 120),
+                              imgsz=imgsz, conf=conf, verbose=verbose)
+    teams.fit(fit_crops)          # raises a descriptive error if it found too few
     if verbose:
         print(f"team clusters fitted on {len(fit_crops)} crops")
 

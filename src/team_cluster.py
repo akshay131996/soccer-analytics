@@ -54,6 +54,16 @@ class TeamClassifier:
 
     def fit(self, crops):
         from sklearn.cluster import KMeans
+        # Fail with a message that says what to do. Handing an empty list to sklearn
+        # produces "Expected 2D array, got 1D array instead: array=[]", which tells you
+        # nothing about the actual problem -- that the detector found no players.
+        if len(crops) < 2:
+            raise ValueError(
+                f"need at least 2 player crops to fit two teams, got {len(crops)}. "
+                "The detector found (almost) nothing: check that the clip actually "
+                "contains people, that class resolution matched (print model.names), "
+                "and that imgsz is high enough for the object size in your footage."
+            )
         feats = self.embedder(crops)
         self.kmeans = KMeans(n_clusters=2, n_init=10, random_state=0).fit(feats)
         return self
