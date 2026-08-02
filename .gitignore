@@ -1,0 +1,22 @@
+# large / regenerable assets — scripts re-fetch these on first run
+*.mp4
+*.avi
+*.pt
+*.onnx
+
+# run outputs (regenerate via run_all.ipynb)
+soccer_run/
+outputs/
+runs/
+datasets/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# secrets — Roboflow / SoccerNet keys go in env vars, never in the repo
+.env
+*.key

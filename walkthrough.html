@@ -1,0 +1,1497 @@
+<title>Soccer Analytics — Pipeline Architecture</title>
+
+<style>
+  :root {
+    --ground: #ECEFF2;
+    --surface: #FFFFFF;
+    --surface-2: #F4F7F9;
+    --ink: #0F1720;
+    --ink-muted: #55636F;
+    --ink-faint: #7C8A96;
+    --rule: #D3DAE1;
+    --rule-strong: #B6C1CB;
+    --accent: #2F4FBF;
+    --accent-soft: #E6EBFA;
+    --amber: #9A6A12;
+    --amber-soft: #FBF0DA;
+    --team-a: #BC4038;
+    --team-b: #3566B8;
+    --ok: #2A6E52;
+
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --measure: 68ch;
+    --step: clamp(1rem, 0.6rem + 0.9vw, 1.5rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0C1116;
+      --surface: #141C23;
+      --surface-2: #1A242C;
+      --ink: #E3E9EE;
+      --ink-muted: #97A6B2;
+      --ink-faint: #6F7F8B;
+      --rule: #26313A;
+      --rule-strong: #36434E;
+      --accent: #7E9BF0;
+      --accent-soft: #1B2540;
+      --amber: #D9A441;
+      --amber-soft: #2A2216;
+      --team-a: #E0655A;
+      --team-b: #6E9AE0;
+      --ok: #58B98D;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0C1116;
+    --surface: #141C23;
+    --surface-2: #1A242C;
+    --ink: #E3E9EE;
+    --ink-muted: #97A6B2;
+    --ink-faint: #6F7F8B;
+    --rule: #26313A;
+    --rule-strong: #36434E;
+    --accent: #7E9BF0;
+    --accent-soft: #1B2540;
+    --amber: #D9A441;
+    --amber-soft: #2A2216;
+    --team-a: #E0655A;
+    --team-b: #6E9AE0;
+    --ok: #58B98D;
+  }
+
+  :root[data-theme="light"] {
+    --ground: #ECEFF2;
+    --surface: #FFFFFF;
+    --surface-2: #F4F7F9;
+    --ink: #0F1720;
+    --ink-muted: #55636F;
+    --ink-faint: #7C8A96;
+    --rule: #D3DAE1;
+    --rule-strong: #B6C1CB;
+    --accent: #2F4FBF;
+    --accent-soft: #E6EBFA;
+    --amber: #9A6A12;
+    --amber-soft: #FBF0DA;
+    --team-a: #BC4038;
+    --team-b: #3566B8;
+    --ok: #2A6E52;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 4rem) clamp(1rem, 4vw, 3rem) 6rem;
+  }
+
+  .col { max-width: var(--measure); }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    border-top: 3px solid var(--ink);
+    padding-top: 1.25rem;
+    margin-bottom: 3.5rem;
+  }
+  .masthead h1 {
+    font-family: var(--font-mono);
+    font-size: clamp(1.9rem, 1.1rem + 3.2vw, 3.4rem);
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0.4rem 0 0.9rem;
+  }
+  .masthead p {
+    color: var(--ink-muted);
+    max-width: 62ch;
+    font-size: 1.06rem;
+    margin: 0;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.75rem;
+    margin-top: 1.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+  .meta-row b { color: var(--ink-muted); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 4rem; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    border-bottom: 1px solid var(--rule-strong);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.75rem;
+    position: relative;
+  }
+  .sec-head::after {
+    content: "";
+    position: absolute;
+    left: 0; bottom: -1px;
+    width: 2.5rem; height: 3px;
+    background: var(--ink);
+  }
+  .stage-no {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    flex: none;
+    padding-top: 0.35rem;
+  }
+  h2 {
+    font-family: var(--font-mono);
+    font-size: clamp(1.25rem, 0.95rem + 1.1vw, 1.7rem);
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--font-mono);
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 2.25rem 0 0.6rem;
+  }
+  p { margin: 0 0 1.05rem; max-width: var(--measure); }
+  ul, ol { max-width: var(--measure); padding-left: 1.2rem; margin: 0 0 1.05rem; }
+  li { margin-bottom: 0.5rem; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  strong { font-weight: 650; }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.855em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.08em 0.35em;
+  }
+
+  /* ---------- callouts ---------- */
+  .trap, .note {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--amber);
+    background: var(--amber-soft);
+    padding: 1.1rem 1.25rem;
+    margin: 1.5rem 0;
+    max-width: var(--measure);
+  }
+  .note { border-left-color: var(--accent); background: var(--accent-soft); }
+  .trap > :last-child, .note > :last-child { margin-bottom: 0; }
+  .trap-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .note .trap-label { color: var(--accent); }
+
+  /* ---------- figure plates ---------- */
+  .plate {
+    border: 1px solid var(--rule-strong);
+    background: var(--surface);
+    margin: 2rem 0 2.25rem;
+    overflow: hidden;
+  }
+  .plate-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.5rem 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .plate-bar b { color: var(--ink); font-weight: 650; letter-spacing: 0.08em; }
+  .plate-body { padding: 1.1rem; }
+  .plate-cap {
+    border-top: 1px solid var(--rule);
+    padding: 0.75rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    background: var(--surface-2);
+  }
+  .plate-cap p { margin: 0; max-width: none; }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+  }
+  button {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--rule-strong);
+    border-radius: 2px;
+    padding: 0.4rem 0.7rem;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+  button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .readout {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+    margin-left: auto;
+  }
+  .readout b { color: var(--ink); }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+  .duo figcaption {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.4rem;
+  }
+  svg { display: block; width: 100%; height: auto; touch-action: none; }
+
+  /* ---------- tables ---------- */
+  .table-wrap { overflow-x: auto; margin: 1.5rem 0 2rem; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { background: transparent; border: none; padding: 0; color: var(--accent); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- collapsible math ---------- */
+  details {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    margin: 1.25rem 0;
+    max-width: var(--measure);
+  }
+  summary {
+    cursor: pointer;
+    padding: 0.65rem 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    background: var(--surface-2);
+  }
+  summary::marker { color: var(--ink-faint); }
+  .details-body { padding: 1rem 0.9rem 0.25rem; }
+  .eq {
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    padding: 0.8rem 0.9rem;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.7;
+    margin: 0 0 1rem;
+  }
+
+  pre.mermaid {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1.5rem 0 2rem;
+    text-align: center;
+  }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink-muted);
+    border-left: 2px solid var(--rule-strong);
+    padding-left: 0.85rem;
+    margin: 0 0 1.5rem;
+    max-width: 60ch;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <span class="eyebrow">Project 03 · Design document</span>
+    <h1>Soccer analytics from broadcast video</h1>
+    <p>An architecture walkthrough of the six-stage pipeline that turns a match clip into tracked players, team assignments, a tactical minimap and per-player distance — written before the code, so the failure modes are chosen rather than discovered.</p>
+    <div class="meta-row">
+      <span><b>Input</b> 1080p+ broadcast clip</span>
+      <span><b>Output</b> annotated video · minimap · stats</span>
+      <span><b>Stack</b> YOLO26 · ByteTrack · OpenCV · scikit-learn</span>
+      <span><b>Runs on</b> single GPU</span>
+    </div>
+  </header>
+
+  <p class="kicker">Why a design document at all: the previous project in this series ran end&#8209;to&#8209;end without a single exception and was still wrong in five places. Every one of those bugs was silent — plausible numbers, no stack trace. Deciding the data contracts and failure modes up front is the actual fix for that pattern, not more careful coding.</p>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§00</span>
+      <h2>System architecture</h2>
+    </div>
+
+    <p>Six stages, each consuming the previous stage's output. Detection and tracking are the perception layer; team assignment and homography are the interpretation layer; statistics are derived last, from metres rather than pixels.</p>
+
+    <pre class="mermaid">
+flowchart LR
+  V["Frame<br/>H×W×3 BGR"] --> D["Detector<br/>YOLO26"]
+  D --> F{"Filter<br/>by class name"}
+  F --> T["ByteTrack<br/>assigns tracker_id"]
+  T --> C["Crop players"]
+  C --> E["Embed → k-means<br/>team_id"]
+  T --> A["Feet anchor<br/>bottom-centre"]
+  A --> H["Homography<br/>pixels → metres"]
+  H --> S["Stats<br/>distance · speed · possession"]
+  E --> R["Render overlay"]
+  H --> M["Tactical minimap"]
+  S --> R
+  M --> R
+  R --> O["Annotated video"]
+    </pre>
+
+    <h3>Data contract at each boundary</h3>
+    <p>The thing worth being precise about. Most integration bugs live here — in what one stage assumes about the shape and meaning of what it receives.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Boundary</th><th>Shape</th><th>Carries</th><th>Assumption that can break</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Video → Detector</b></td>
+            <td><code>ndarray (H,W,3)</code></td>
+            <td>One BGR frame</td>
+            <td>Inference resolution ≠ source resolution — the detector silently downscales</td>
+          </tr>
+          <tr>
+            <td><b>Detector → Filter</b></td>
+            <td><code>Detections</code><br><span class="num">xyxy, confidence, class_id</span></td>
+            <td>All classes the model knows</td>
+            <td><b>class_id is model-specific.</b> Index 0 is not universally "person"</td>
+          </tr>
+          <tr>
+            <td><b>Filter → Tracker</b></td>
+            <td><code>Detections</code> subset</td>
+            <td>Players only</td>
+            <td>Referees and keepers are still "person" to a COCO model</td>
+          </tr>
+          <tr>
+            <td><b>Tracker → downstream</b></td>
+            <td><code>+ tracker_id</code></td>
+            <td>Identity across frames</td>
+            <td>IDs are not stable — a switch silently reassigns a player's history</td>
+          </tr>
+          <tr>
+            <td><b>Crops → Team classifier</b></td>
+            <td><code>list[ndarray]</code></td>
+            <td>Player appearance</td>
+            <td>k=2 cannot represent keepers and referees</td>
+          </tr>
+          <tr>
+            <td><b>Feet → Homography</b></td>
+            <td><code>(N,2)</code> pixels</td>
+            <td>Ground contact point</td>
+            <td>Only valid for points <em>on the pitch plane</em> — a head is not</td>
+          </tr>
+          <tr>
+            <td><b>Homography → Stats</b></td>
+            <td><code>(N,2)</code> metres</td>
+            <td>Real-world position</td>
+            <td>Garbage calibration produces confident, precise, wrong metres</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Control flow: why two passes</h3>
+    <p>k-means must see data before it can assign anything, and the team clusters aren't known until players have been observed. So the video is read twice: once to fit, once to render.</p>
+
+    <pre class="mermaid">
+flowchart TB
+  subgraph P1["Pass 1 — fit (first N frames)"]
+    A1["Read frames"] --> A2["Detect players"]
+    A2 --> A3["Collect crops"]
+    A3 --> A4["Fit k-means, k=2"]
+  end
+  subgraph P2["Pass 2 — render (all frames)"]
+    B1["Re-read from frame 0"] --> B2["Detect + track"]
+    B2 --> B3["Predict team"]
+    B3 --> B4["Map feet → pitch"]
+    B4 --> B5["Accumulate stats + write frame"]
+  end
+  A4 -->|"fitted clusters"| B3
+    </pre>
+  </section>
+
+  <!-- ============ STAGE 1 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§01</span>
+      <h2>Detection — finding players in a single frame</h2>
+    </div>
+
+    <p>The detector looks at one frame in isolation and returns boxes. It has no memory: nothing in its output says "this is the same player as last frame". That's the tracker's job, and keeping the two responsibilities separate is what makes the pipeline debuggable.</p>
+
+    <p>Modern YOLO differs from the YOLOv5 generation in two ways worth knowing. It's <strong>anchor-free</strong> — it predicts box geometry directly rather than as offsets from predefined anchor shapes, which removes a set of dataset-specific hyperparameters. And the newest versions are <strong>NMS-free</strong>: trained with one-to-one label assignment so they emit one box per object, removing the non-maximum-suppression cleanup step from inference entirely. Fewer moving parts, faster on edge hardware.</p>
+
+    <p>For each detection you get four numbers for the box, a confidence, and a <em>class index</em>. That last one is where the trap lives.</p>
+
+    <div class="trap">
+      <span class="trap-label">The trap · costs you a whole run</span>
+      <p>A class index is <strong>only meaningful relative to the model that produced it</strong>. In COCO, index 0 is <code>person</code>. In a soccer-specific model the classes are typically <code>ball, goalkeeper, player, referee</code> — index 0 is the <em>ball</em>.</p>
+      <p>The existing scaffold for this project contains the line <code>person_class = 0</code>. That is correct for the pretrained COCO model it currently uses, and becomes silently, catastrophically wrong the moment a fine-tuned soccer model is loaded — the pipeline would track the ball as if it were a squad of players and quietly produce a full set of plausible-looking statistics.</p>
+      <p>This exact mistake invalidated the previous project's entire evaluation: a COCO model was scored against a drone dataset by index, so its <code>airplane</code> predictions were graded against <em>van</em> boxes and <code>train</code> against <em>tricycle</em>. The resulting number looked like a real measurement and meant nothing.</p>
+      <p><b>The fix, in one rule:</b> resolve classes by <em>name</em>, never by literal index.</p>
+    </div>
+
+    <div class="eq">PLAYER_NAMES = {"player", "person", "goalkeeper"}
+
+def player_class_ids(model):
+    return [i for i, n in model.names.items()
+            if str(n).lower() in PLAYER_NAMES]</div>
+
+    <p>The same function then works unchanged across the COCO baseline and every fine-tuned checkpoint, and it fails loudly — no matching names — rather than quietly detecting the wrong thing.</p>
+  </section>
+
+  <!-- ============ STAGE 2 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§02</span>
+      <h2>Tracking — keeping identity across frames</h2>
+    </div>
+
+    <p>Detection gives you boxes per frame. Tracking answers the harder question: which box in <em>this</em> frame is the same object as which box in the <em>last</em> frame? This is the data association problem, and every derived statistic depends on getting it right. Distance covered is meaningless if a player's identity changes halfway through the clip.</p>
+
+    <p>The standard approach has two parts. A <strong>Kalman filter</strong> predicts where each existing track should appear next, using a constant-velocity motion model — cheap, and good enough over the tens of milliseconds between frames. Then the <strong>Hungarian algorithm</strong> optimally matches predictions to new detections, scored by IoU (box overlap).</p>
+
+    <p>ByteTrack's contribution is smaller and cleverer than it sounds: <strong>don't throw away low-confidence detections</strong>. Conventional trackers discard everything below a threshold, which is exactly wrong during occlusion — a partially hidden player still produces a weak detection, and discarding it breaks the track. ByteTrack associates high-confidence boxes first, then runs a second association round using the leftovers to rescue tracks that would otherwise be lost.</p>
+
+    <figure class="plate">
+      <div class="plate-bar"><b>Fig. 01</b><span>Association under occlusion</span></div>
+      <div class="plate-body">
+        <svg id="trk-svg" viewBox="0 0 380 250" role="img" aria-label="Animation comparing single-stage and two-stage tracking association through an occlusion"></svg>
+        <div class="controls">
+          <button id="trk-play" type="button">Play</button>
+          <button id="trk-step" type="button">Step</button>
+          <button id="trk-reset" type="button">Reset</button>
+          <button id="trk-mode" type="button" aria-pressed="false">Mode: high&#8209;confidence only</button>
+          <span class="readout">frame <b id="trk-frame">0</b>/10 · IDs used <b id="trk-ids">0</b></span>
+        </div>
+      </div>
+      <figcaption class="plate-cap"><p>Three players move left to right; the middle one is occluded around frames 5–7 and its detection confidence collapses. Toggle the mode: discarding weak detections loses the track and issues a <em>new</em> ID on reappearance — the player's accumulated distance resets to zero. Keeping them preserves identity through the occlusion. Association here is real greedy&nbsp;IoU matching, not a scripted animation.</p></figcaption>
+    </figure>
+
+    <details>
+      <summary>The Kalman predict / update cycle</summary>
+      <div class="details-body">
+        <p>State <em>x</em> holds position and velocity; <em>P</em> is its uncertainty. Between frames, predict:</p>
+        <div class="eq">x⁻ = F x        (constant-velocity motion)
+P⁻ = F P Fᵀ + Q  (uncertainty grows)</div>
+        <p>When a detection <em>z</em> is matched, correct toward it — weighted by how much you trust the measurement versus the prediction:</p>
+        <div class="eq">K  = P⁻ Hᵀ (H P⁻ Hᵀ + R)⁻¹   (Kalman gain)
+x  = x⁻ + K (z − H x⁻)
+P  = (I − K H) P⁻</div>
+        <p>Practical consequence: an unmatched track keeps coasting on prediction alone with <em>P</em> growing each frame. <code>lost_track_buffer</code> caps how many frames it may coast before the track is deleted.</p>
+      </div>
+    </details>
+
+    <p>The characteristic failure is the <strong>ID switch</strong> — two players cross, and the tracker swaps their identities. It's visible in output (a jersey number jumping between people) and measurable, but only against ground-truth tracking annotations using metrics like MOTA and IDF1. Without those labels you can't quantify it, and it's more honest to say so than to invent a proxy.</p>
+
+    <div class="note">
+      <span class="trap-label">Metric discipline</span>
+      <p>In the previous project the tracker sweep logged only "number of unique IDs". That number rises both when tracks fragment <em>and</em> when a lower threshold legitimately detects more objects — two opposite explanations predicting the same movement, so the metric could not answer its own question.</p>
+      <p>Logging <em>detections per frame</em> and <em>mean track length</em> alongside it separates them: IDs up with detections up and track length steady means more real objects; IDs up with track length down means fragmentation. Decide what each hypothesis predicts <em>before</em> collecting the number.</p>
+    </div>
+  </section>
+
+  <!-- ============ STAGE 3 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§03</span>
+      <h2>Team assignment — unsupervised, and free</h2>
+    </div>
+
+    <p>Nobody labels which team each player belongs to. You don't need them to. Kit colour dominates the appearance of a player crop, so if you embed each crop into a vector space, the crops form two obvious clusters. k-means with k=2 separates them in milliseconds, with no annotation and no training.</p>
+
+    <p>Two embedders, a deliberate trade-off:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Embedder</th><th>What it is</th><th>Cost</th><th>Best when</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>HSV histogram</b></td>
+            <td>Colour histogram of the torso region — upper-centre of the crop, which is mostly shirt and avoids grass at the edges</td>
+            <td>Microseconds, CPU</td>
+            <td>Kits are colour-distinct and lighting is even</td>
+          </tr>
+          <tr>
+            <td><b>SigLIP embedding</b></td>
+            <td>A vision-transformer's learned representation — semantic, not just colour</td>
+            <td>GPU, ~100× slower</td>
+            <td>Shadows, floodlights, mixed lighting across the pitch</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Start with the histogram. It is genuinely good enough for most broadcast footage, and the point of choosing the cheap thing first is that you find out whether you need the expensive thing.</p>
+
+    <figure class="plate">
+      <div class="plate-bar"><b>Fig. 02</b><span>Embedding space · k-means</span></div>
+      <div class="plate-body">
+        <svg id="clu-svg" viewBox="0 0 640 320" role="img" aria-label="Scatter plot of player crop embeddings clustered into teams"></svg>
+        <div class="controls">
+          <button id="clu-k2" type="button" aria-pressed="true">k = 2</button>
+          <button id="clu-k3" type="button" aria-pressed="false">k = 3</button>
+          <span class="readout">forced into a team: <b id="clu-err">3</b></span>
+        </div>
+      </div>
+      <figcaption class="plate-cap"><p>Outfield players separate cleanly. The goalkeepers and the referee wear a third and fourth kit — with k=2 they are <em>forced</em> into a team, and the error is structural, not a tuning problem. Raising k and keeping only the two largest clusters is the standard mitigation.</p></figcaption>
+    </figure>
+
+    <p>This is the honest failure to document rather than hide: two goalkeepers in distinct kits and a referee in a fifth colour cannot be represented by two clusters. You can raise <em>k</em> and keep the two largest clusters, or detect goalkeepers as a separate class in the detector — which a fine-tuned soccer model already does.</p>
+  </section>
+
+  <!-- ============ STAGE 4 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§04</span>
+      <h2>Homography — the geometry that makes it real</h2>
+    </div>
+
+    <p>This is the centre of the project, and the only part that is pure classical geometry with no learning involved.</p>
+
+    <p>Pixel distances are meaningless. Two players ten metres apart near the camera span hundreds of pixels; the same ten metres at the far touchline spans a few dozen. Any statistic computed in pixel space — distance covered, speed, spacing — is not just imprecise but systematically wrong, and wrong by a different factor at every depth.</p>
+
+    <figure class="plate">
+      <div class="plate-bar"><b>Fig. 03</b><span>Why pixels lie</span></div>
+      <div class="plate-body">
+        <svg id="persp-svg" viewBox="0 0 640 220" role="img" aria-label="Diagram showing equal real-world distances appearing as unequal pixel distances under perspective"></svg>
+      </div>
+      <figcaption class="plate-cap"><p>Four <em>equal</em> 15&nbsp;m segments of pitch, seen from a camera. The marker travels at a constant 20&nbsp;km/h in the real world, yet its apparent pixel speed changes continuously with depth. Nothing in the image tells you this is happening.</p></figcaption>
+    </figure>
+
+    <p>The fix rests on one fact: <strong>a football pitch is a plane</strong>. Any two views of a plane are related by a single 3×3 matrix — a homography. Find that matrix once and you can convert any point on the pitch surface from pixels to metres.</p>
+
+    <p>It has eight degrees of freedom, so four point correspondences are enough: each gives you two equations, four gives eight. Corner flags, penalty-box corners, the centre spot and the halfway-line intersections are all landmarks whose real-world coordinates you already know.</p>
+
+    <div class="note">
+      <span class="trap-label">Free ground truth</span>
+      <p>Here is the structural advantage this project has over the last one: <strong>a pitch is 105 × 68 metres by regulation</strong>. The real-world coordinates aren't estimated, they're specified by the laws of the game.</p>
+      <p>The previous project had no such reference. Its calibration quad was placed by eye and assumed 30&nbsp;m of road depth where the true span was ~250&nbsp;m — so every speed was under-reported by roughly 8×, and the pipeline reported 55&nbsp;km/h traffic on a free-flowing motorway without complaint. Distance error propagates linearly into speed. Here, that entire class of error is off the table for free.</p>
+    </div>
+
+    <p>Drag the corner markers below. They start on the true pitch corners, so the mapping is exact and the error reads zero. Move one and watch the reconstruction degrade — this is precisely what a mis-calibrated pipeline does, silently.</p>
+
+    <figure class="plate">
+      <div class="plate-bar"><b>Fig. 04</b><span>Interactive · pixels → metres</span></div>
+      <div class="plate-body">
+        <div class="duo">
+          <figure>
+            <figcaption>Broadcast view — drag the ◆ corners</figcaption>
+            <svg id="h-src" viewBox="0 0 420 300" role="application" aria-label="Perspective view of a pitch with four draggable calibration corner handles"></svg>
+          </figure>
+          <figure>
+            <figcaption>Reconstructed tactical map — 105 × 68 m</figcaption>
+            <svg id="h-dst" viewBox="0 0 420 272" role="img" aria-label="Bird's eye reconstruction of player positions on the pitch"></svg>
+          </figure>
+        </div>
+        <div class="controls">
+          <button id="h-reset" type="button">Reset to true corners</button>
+          <button id="h-bad" type="button">Load a bad calibration</button>
+          <span class="readout">mean position error <b id="h-err">0.00</b> m</span>
+        </div>
+      </div>
+      <figcaption class="plate-cap"><p>Hollow circles are ground-truth positions; filled circles are what the homography reconstructs from the current corner placement. The error readout is the mean distance between them, in metres — the number a calibration mistake actually costs you. A homography is computed live via DLT on every drag.</p></figcaption>
+    </figure>
+
+    <details>
+      <summary>The homography matrix and the DLT solve</summary>
+      <div class="details-body">
+        <p>In homogeneous coordinates the mapping is a single matrix multiply, with the result divided through by the third component — that division is what produces perspective:</p>
+        <div class="eq">⎡x'⎤   ⎡h₁₁ h₁₂ h₁₃⎤ ⎡x⎤
+⎢y'⎥ = ⎢h₂₁ h₂₂ h₂₃⎥ ⎢y⎥
+⎣w'⎦   ⎣h₃₁ h₃₂  1 ⎦ ⎣1⎦
+
+X = x'/w'    Y = y'/w'</div>
+        <p>Scale is arbitrary, so fixing h₃₃ = 1 leaves 8 unknowns. Expanding and clearing the denominator for one correspondence (x,y) → (X,Y) gives two linear equations:</p>
+        <div class="eq">h₁₁x + h₁₂y + h₁₃ − h₃₁xX − h₃₂yX = X
+h₂₁x + h₂₂y + h₂₃ − h₃₁xY − h₃₂yY = Y</div>
+        <p>Four correspondences stack into an 8×8 system solved directly by Gaussian elimination — this is the Direct Linear Transform, and it is what <code>cv2.findHomography</code> does (with robustness machinery on top when you supply more than four points).</p>
+        <p><b>What breaks it:</b> three collinear points, or four points clustered in a small image region. Both make the system ill-conditioned, and the failure is numerical rather than obvious — you get a matrix, it just isn't the right one. Spread correspondences as widely across the frame as possible.</p>
+      </div>
+    </details>
+
+    <h3>One assumption to keep in mind</h3>
+    <p>A homography maps <em>a plane</em>. It is valid only for points actually on the pitch surface — which is why player positions are taken from the bottom-centre of the box, the feet. Use the box centre and you are mapping a point roughly a metre above the plane, and the reconstruction is wrong by an amount that grows with distance from the camera. A ball in flight is off-plane by definition; its map position is only meaningful when it's on the ground.</p>
+  </section>
+
+  <!-- ============ STAGE 5 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§05</span>
+      <h2>The ball — the genuinely hard part</h2>
+    </div>
+
+    <p>Expect this to be the part that doesn't work first time. A football in broadcast footage is small, fast, frequently occluded by players, and motion-blurred into an ellipse whenever it's kicked with intent.</p>
+
+    <p>The core difficulty is scale. Inference typically runs at 640&nbsp;px, so a 4K frame is downscaled by a factor of six before the detector sees anything:</p>
+
+    <figure class="plate">
+      <div class="plate-bar"><b>Fig. 05</b><span>Object size after downscaling</span></div>
+      <div class="plate-body">
+        <svg id="ball-svg" viewBox="0 0 640 260" role="img" aria-label="Bar chart comparing player and ball pixel sizes at different inference resolutions"></svg>
+      </div>
+      <figcaption class="plate-cap"><p>At 640&nbsp;px inference on 4K source, the ball falls to roughly 2&nbsp;px — below any reliable detection threshold. The player survives comfortably. This single ratio explains most "the model can't see the ball" reports.</p></figcaption>
+    </figure>
+
+    <p>Three approaches, in increasing order of effort:</p>
+
+    <ol>
+      <li><strong>Raise inference resolution.</strong> The cheapest intervention and often sufficient. In the previous project, moving from 640 to 1280&nbsp;px raised detections per frame from 3.10 to 4.88 — and, more interestingly, raised mean track length from 47.8 to 81.3 frames while <em>reducing</em> the unique ID count. More detections plus fewer IDs plus longer tracks means the extra resolution didn't merely find more objects, it stopped the tracker losing the ones it already had.</li>
+      <li><strong>Tiled inference (SAHI).</strong> Slice the frame into overlapping tiles, run the detector on each at full resolution, merge the results. Small objects are effectively magnified. Costs several forward passes per frame.</li>
+      <li><strong>Motion priors.</strong> A ball follows smooth ballistic arcs. A Kalman filter tuned for that motion can interpolate through gaps where the detector loses it entirely — accepting interpolated positions as a legitimate output, clearly labelled as such.</li>
+    </ol>
+
+    <p>A fine-tuned model helps here too: <code>ball</code> as an explicit class, trained on footage where the ball is small, beats a COCO model's <code>sports ball</code> class trained mostly on large, centred, unblurred examples.</p>
+  </section>
+
+  <!-- ============ STAGE 6 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§06</span>
+      <h2>Statistics — easy to compute, easy to compute meaninglessly</h2>
+    </div>
+
+    <p>Once positions are in metres, the statistics are arithmetic. The difficulty is entirely in whether they mean anything.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Statistic</th><th>Computation</th><th>How it goes wrong</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Distance covered</b></td>
+            <td>Sum of per-frame displacement per <code>tracker_id</code></td>
+            <td>An ID switch teleports a player across the pitch and adds tens of metres in one frame</td>
+          </tr>
+          <tr>
+            <td><b>Speed</b></td>
+            <td>Displacement ÷ elapsed time, over a short window</td>
+            <td>Per-frame differencing amplifies jitter — needs a window, and a sanity check against plausible human speed</td>
+          </tr>
+          <tr>
+            <td><b>Possession</b></td>
+            <td>Nearest player to the ball, aggregated by team</td>
+            <td>Flickers wildly frame to frame when two players contest; needs hysteresis, not raw nearest-neighbour</td>
+          </tr>
+          <tr>
+            <td><b>Team shape</b></td>
+            <td>Convex hull or centroid spread per team</td>
+            <td>One misassigned goalkeeper drags the centroid the length of the pitch</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The distance calculation in the scaffold already carries a guard for exactly the first failure:</p>
+
+    <div class="eq">if step &lt; 2.0:            # metres in one frame
+    distance_m[tid] += step</div>
+
+    <p>A player cannot cover two metres in a single frame at 25&nbsp;fps — that would be 180&nbsp;km/h — so a larger jump is definitionally an ID switch rather than movement, and is discarded. This is a heuristic, and a defensible one, but it must be <em>stated</em>: it silently drops real motion in dropped-frame footage, and it makes reported distance a lower bound rather than a measurement. Undocumented, it's the kind of thing that quietly makes a number 10% wrong forever.</p>
+  </section>
+
+  <!-- ============ FAILURE MODES ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§07</span>
+      <h2>Failure modes</h2>
+    </div>
+
+    <p>Written before building, because a failure you've predicted is one you'll recognise in an output image instead of shipping.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symptom</th><th>Stage</th><th>Likely cause</th><th>Diagnostic</th></tr></thead>
+        <tbody>
+          <tr><td>Nothing detected, or nonsense detected</td><td>Detection</td><td>Class indices assumed rather than resolved by name</td><td>Print <code>model.names</code> and the resolved ids</td></tr>
+          <tr><td>Distant players missed</td><td>Detection</td><td>Inference resolution too low for the source</td><td>Compare detections/frame at 640 vs 1280</td></tr>
+          <tr><td>Jersey numbers jump between players</td><td>Tracking</td><td>ID switch during crossing or occlusion</td><td>Watch mean track length; view the annotated clip</td></tr>
+          <tr><td>Distances implausibly high</td><td>Tracking → Stats</td><td>ID-switch teleports being accumulated</td><td>Histogram per-frame step size; check the 2&nbsp;m guard</td></tr>
+          <tr><td>Teams flicker frame to frame</td><td>Team assignment</td><td>Re-embedding per frame with no temporal smoothing</td><td>Cache team by <code>tracker_id</code>, majority-vote over time</td></tr>
+          <tr><td>Goalkeeper on the wrong team</td><td>Team assignment</td><td>k=2 cannot represent a third kit</td><td>Expected. Raise k or use a keeper class</td></tr>
+          <tr><td>Players outside the pitch on the minimap</td><td>Homography</td><td>Bad correspondences, or box-centre used instead of feet</td><td>Reconstruct a known landmark and measure the error</td></tr>
+          <tr><td>Everything plausible but subtly off</td><td>Homography</td><td>Correspondences too clustered — ill-conditioned solve</td><td>Spread points; check reprojection error</td></tr>
+          <tr><td>Possession jitters every frame</td><td>Stats</td><td>Raw nearest-neighbour with no hysteresis</td><td>Require N consecutive frames before switching</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ DECISIONS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§08</span>
+      <h2>Design decisions and their costs</h2>
+    </div>
+
+    <p>Every one of these is a real trade-off in the current scaffold, with a real price attached.</p>
+
+    <h3>Two passes over the video</h3>
+    <p>k-means cannot predict before it has been fitted, so the clip is read twice. The cost is doubled decode time and detection being run twice on the fitting frames. The alternative — fit on the first N frames while buffering them, then render — trades memory for I/O and complicates the code. Two passes is the right call for offline analysis and the wrong one for a live stream, where you'd instead fit on a rolling window and accept that early frames use a provisional model.</p>
+
+    <h3>Re-embedding every player every frame</h3>
+    <p>The scaffold calls <code>teams.predict()</code> on every crop in every frame. With the histogram embedder that's cheap enough to ignore. With SigLIP it dominates runtime — a vision transformer forward pass per player per frame, ~250 redundant inferences per second of footage.</p>
+    <p>The fix is straightforward and worth building in from the start: a player's team does not change, so classify once per <code>tracker_id</code> and cache. This also fixes the flicker failure mode above, since a cached assignment can't oscillate. Two problems, one change.</p>
+
+    <h3>Overloading <code>class_id</code> to carry team</h3>
+    <p>The scaffold writes team assignments into the <code>class_id</code> field so the annotator colours boxes by team. It works, and it costs you the original detection class — after that line you can no longer tell a player from a goalkeeper, because the field that knew has been overwritten. Acceptable when the only downstream consumer is the renderer; actively harmful the moment anything else needs the real class. Carry team in a separate array.</p>
+
+    <h3>Histogram before SigLIP</h3>
+    <p>Start with the cheap embedder specifically so you learn whether the expensive one is necessary. Reaching for the transformer first means never finding out, and paying for it forever.</p>
+  </section>
+
+  <!-- ============ DONE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="stage-no">§09</span>
+      <h2>What "done" looks like</h2>
+    </div>
+
+    <p>Written now, before any training run, so success criteria can't be quietly retrofitted to whatever the numbers turn out to be.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Component</th><th>Target</th><th>Measured how</th></tr></thead>
+        <tbody>
+          <tr><td>Player detection</td><td>mAP@50 ≥ 0.85 on held-out frames</td><td>Fine-tuned model vs a valid baseline in the <em>same</em> label space</td></tr>
+          <tr><td>Ball detection</td><td>Reported honestly, whatever it is</td><td>Separate per-class mAP — never hidden inside an average</td></tr>
+          <tr><td>Tracking</td><td>Stable IDs across a 60&nbsp;s clip</td><td>Mean track length + visual inspection; MOTA/IDF1 only if labels exist</td></tr>
+          <tr><td>Team assignment</td><td>Correct for outfield players; keepers documented as a known limitation</td><td>Manual check on ~50 crops</td></tr>
+          <tr><td>Homography</td><td>Reprojection error &lt; 1&nbsp;m on known landmarks</td><td>Map a landmark not used for fitting; measure the miss</td></tr>
+          <tr><td>Distance stats</td><td>Within a plausible range for 90 minutes (~10–12&nbsp;km)</td><td>Extrapolate from the clip; sanity-check against published figures</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>That last row is the pattern worth internalising, and it's the one that would have caught every silent bug in the previous project: <strong>check the output against something you know independently of the code</strong>. Motorways are not 55&nbsp;km/h zones. Drone datasets do not contain boats. Footballers cover about 10&nbsp;km a match. None of those facts come from the pipeline, which is exactly what makes them useful for testing it.</p>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var NS = "http://www.w3.org/2000/svg";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Every figure resolves CSS custom properties at draw time, so all of them must be
+  // redrawn when the theme changes -- otherwise they keep the old palette baked in.
+  var REDRAW = [];
+
+  function el(tag, attrs) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) if (attrs.hasOwnProperty(k)) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function css(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+
+  /* ============================================================
+     Linear solve (Gaussian elimination with partial pivoting)
+     ============================================================ */
+  function solve(A, b) {
+    var n = b.length, i, j, k;
+    var M = A.map(function (row, r) { return row.slice().concat([b[r]]); });
+    for (i = 0; i < n; i++) {
+      var piv = i;
+      for (j = i + 1; j < n; j++) if (Math.abs(M[j][i]) > Math.abs(M[piv][i])) piv = j;
+      var t = M[i]; M[i] = M[piv]; M[piv] = t;
+      if (Math.abs(M[i][i]) < 1e-12) return null;
+      for (j = i + 1; j < n; j++) {
+        var f = M[j][i] / M[i][i];
+        for (k = i; k <= n; k++) M[j][k] -= f * M[i][k];
+      }
+    }
+    var x = new Array(n);
+    for (i = n - 1; i >= 0; i--) {
+      var s = M[i][n];
+      for (j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+      x[i] = s / M[i][i];
+    }
+    return x;
+  }
+
+  /* Direct Linear Transform: 4 correspondences -> 3x3 homography */
+  function homography(src, dst) {
+    var A = [], b = [];
+    for (var i = 0; i < 4; i++) {
+      var x = src[i][0], y = src[i][1], X = dst[i][0], Y = dst[i][1];
+      A.push([x, y, 1, 0, 0, 0, -x * X, -y * X]); b.push(X);
+      A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y]); b.push(Y);
+    }
+    var h = solve(A, b);
+    if (!h) return null;
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+  function applyH(H, p) {
+    var w = H[6] * p[0] + H[7] * p[1] + H[8];
+    if (Math.abs(w) < 1e-9) w = 1e-9;
+    return [(H[0] * p[0] + H[1] * p[1] + H[2]) / w,
+            (H[3] * p[0] + H[4] * p[1] + H[5]) / w];
+  }
+
+  /* ============================================================
+     FIG 04 — interactive homography  (built first: the centrepiece)
+     ============================================================ */
+  (function () {
+    var srcSvg = document.getElementById("h-src");
+    var dstSvg = document.getElementById("h-dst");
+    if (!srcSvg || !dstSvg) return;
+
+    var PW = 105, PH = 68, S = 4;              // pitch metres, minimap px/m
+    var pitchCorners = [[0, 0], [PW, 0], [PW, PH], [0, PH]];
+    // Ground-truth camera: pitch metres -> image pixels
+    var trueImg = [[62, 118], [358, 118], [408, 264], [12, 264]];
+    var Htrue = homography(pitchCorners, trueImg);
+
+    // Ground-truth player positions in metres
+    var players = [
+      { p: [14, 18], t: 0 }, { p: [30, 46], t: 0 }, { p: [44, 14], t: 0 },
+      { p: [40, 33], t: 0 }, { p: [58, 52], t: 1 }, { p: [72, 22], t: 1 },
+      { p: [86, 41], t: 1 }, { p: [95, 56], t: 1 }, { p: [52, 30], t: 2 }
+    ];
+
+    var handles = trueImg.map(function (p) { return p.slice(); });
+    var dragging = -1;
+
+    function pitchLinesMetres() {
+      var L = [];
+      L.push([[0, 0], [PW, 0]], [[PW, 0], [PW, PH]], [[PW, PH], [0, PH]], [[0, PH], [0, 0]]);
+      L.push([[PW / 2, 0], [PW / 2, PH]]);
+      var by = (PH - 40.3) / 2;
+      L.push([[0, by], [16.5, by]], [[16.5, by], [16.5, by + 40.3]], [[16.5, by + 40.3], [0, by + 40.3]]);
+      L.push([[PW, by], [PW - 16.5, by]], [[PW - 16.5, by], [PW - 16.5, by + 40.3]], [[PW - 16.5, by + 40.3], [PW, by + 40.3]]);
+      return L;
+    }
+    function circleMetres(cx, cy, r, n) {
+      var pts = [];
+      for (var i = 0; i <= n; i++) {
+        var a = (i / n) * Math.PI * 2;
+        pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+      }
+      return pts;
+    }
+
+    function teamColor(t) {
+      return t === 0 ? css("--team-a") : t === 1 ? css("--team-b") : css("--ink");
+    }
+
+    function draw() {
+      var rule = css("--rule-strong"), faint = css("--ink-faint"), ink = css("--ink");
+      var accent = css("--accent"), amber = css("--amber"), surf2 = css("--surface-2");
+
+      /* ---- left: broadcast view ---- */
+      clear(srcSvg);
+      srcSvg.appendChild(el("rect", { x: 0, y: 0, width: 420, height: 300, fill: surf2 }));
+
+      pitchLinesMetres().forEach(function (seg) {
+        var a = applyH(Htrue, seg[0]), b = applyH(Htrue, seg[1]);
+        srcSvg.appendChild(el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: rule, "stroke-width": 1.2 }));
+      });
+      var cpts = circleMetres(PW / 2, PH / 2, 9.15, 40).map(function (p) { return applyH(Htrue, p); });
+      srcSvg.appendChild(el("polyline", {
+        points: cpts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "),
+        fill: "none", stroke: rule, "stroke-width": 1.2
+      }));
+
+      players.forEach(function (pl) {
+        var ip = applyH(Htrue, pl.p);
+        srcSvg.appendChild(el("circle", { cx: ip[0], cy: ip[1], r: 4.5, fill: teamColor(pl.t), stroke: css("--surface"), "stroke-width": 1 }));
+      });
+
+      // calibration quad + handles
+      srcSvg.appendChild(el("polygon", {
+        points: handles.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "),
+        fill: "none", stroke: accent, "stroke-width": 1.6, "stroke-dasharray": "5 3"
+      }));
+      handles.forEach(function (p, i) {
+        var g = el("g", { class: "h-handle", tabindex: "0", role: "button",
+                          "aria-label": "Calibration corner " + (i + 1) });
+        g.style.cursor = "grab";
+        g.appendChild(el("circle", { cx: p[0], cy: p[1], r: 13, fill: "transparent" }));
+        var d = el("rect", { x: p[0] - 5.5, y: p[1] - 5.5, width: 11, height: 11, fill: accent,
+                             stroke: css("--surface"), "stroke-width": 1.5,
+                             transform: "rotate(45 " + p[0] + " " + p[1] + ")" });
+        g.appendChild(d);
+        g.addEventListener("pointerdown", function (ev) {
+          dragging = i; ev.preventDefault();
+          srcSvg.setPointerCapture(ev.pointerId);
+        });
+        g.addEventListener("keydown", function (ev) {
+          var step = ev.shiftKey ? 10 : 3, moved = true;
+          if (ev.key === "ArrowLeft") handles[i][0] -= step;
+          else if (ev.key === "ArrowRight") handles[i][0] += step;
+          else if (ev.key === "ArrowUp") handles[i][1] -= step;
+          else if (ev.key === "ArrowDown") handles[i][1] += step;
+          else moved = false;
+          if (moved) { ev.preventDefault(); draw(); }
+        });
+        srcSvg.appendChild(g);
+      });
+
+      /* ---- right: reconstructed minimap ---- */
+      clear(dstSvg);
+      dstSvg.appendChild(el("rect", { x: 0, y: 0, width: PW * S, height: PH * S, fill: surf2 }));
+      pitchLinesMetres().forEach(function (seg) {
+        dstSvg.appendChild(el("line", {
+          x1: seg[0][0] * S, y1: seg[0][1] * S, x2: seg[1][0] * S, y2: seg[1][1] * S,
+          stroke: rule, "stroke-width": 1.2
+        }));
+      });
+      dstSvg.appendChild(el("circle", { cx: (PW / 2) * S, cy: (PH / 2) * S, r: 9.15 * S, fill: "none", stroke: rule, "stroke-width": 1.2 }));
+
+      var Hest = homography(handles, pitchCorners);
+      var errSum = 0, n = 0, degenerate = !Hest;
+
+      players.forEach(function (pl) {
+        // ground truth (hollow)
+        dstSvg.appendChild(el("circle", {
+          cx: pl.p[0] * S, cy: pl.p[1] * S, r: 5, fill: "none",
+          stroke: faint, "stroke-width": 1.3, "stroke-dasharray": "2 2"
+        }));
+        if (degenerate) return;
+        var ip = applyH(Htrue, pl.p);          // where the detector sees them
+        var rec = applyH(Hest, ip);            // reconstructed metres
+        errSum += Math.hypot(rec[0] - pl.p[0], rec[1] - pl.p[1]); n++;
+        var cx = Math.max(-20, Math.min(PW + 20, rec[0])) * S;
+        var cy = Math.max(-20, Math.min(PH + 20, rec[1])) * S;
+        dstSvg.appendChild(el("line", {
+          x1: pl.p[0] * S, y1: pl.p[1] * S, x2: cx, y2: cy,
+          stroke: amber, "stroke-width": 1, opacity: 0.55
+        }));
+        dstSvg.appendChild(el("circle", { cx: cx, cy: cy, r: 5, fill: teamColor(pl.t) }));
+      });
+
+      var out = document.getElementById("h-err");
+      out.textContent = degenerate ? "—" : (errSum / n).toFixed(2);
+      out.style.color = (!degenerate && errSum / n > 2) ? amber : "";
+    }
+
+    function svgPoint(ev) {
+      var pt = srcSvg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var m = srcSvg.getScreenCTM();
+      if (!m) return null;
+      var p = pt.matrixTransform(m.inverse());
+      return [p.x, p.y];
+    }
+    srcSvg.addEventListener("pointermove", function (ev) {
+      if (dragging < 0) return;
+      var p = svgPoint(ev);
+      if (!p) return;
+      handles[dragging] = [Math.max(4, Math.min(416, p[0])), Math.max(4, Math.min(296, p[1]))];
+      draw();
+    });
+    function endDrag() { dragging = -1; }
+    srcSvg.addEventListener("pointerup", endDrag);
+    srcSvg.addEventListener("pointercancel", endDrag);
+    srcSvg.addEventListener("pointerleave", endDrag);
+
+    document.getElementById("h-reset").addEventListener("click", function () {
+      handles = trueImg.map(function (p) { return p.slice(); });
+      draw();
+    });
+    document.getElementById("h-bad").addEventListener("click", function () {
+      // corners guessed too far "into" the frame — the classic eyeballed calibration
+      handles = [[104, 150], [316, 150], [372, 246], [50, 246]];
+      draw();
+    });
+
+    REDRAW.push(draw);
+    draw();
+  })();
+
+  /* ============================================================
+     FIG 03 — perspective distortion
+     ============================================================ */
+  (function () {
+    var svg = document.getElementById("persp-svg");
+    if (!svg) return;
+    var W = 640, H = 220, horizon = 30;
+    var t = 0, raf = null;
+
+    // depth d in [0,1]; 0 = near (bottom), 1 = far (top)
+    function project(d) {
+      var y = H - 22 - d * (H - 22 - horizon - 24);
+      var halfW = 300 * (1 - 0.82 * d);
+      return { y: y, half: halfW };
+    }
+
+    function render() {
+      clear(svg);
+      var rule = css("--rule-strong"), faint = css("--ink-faint"),
+          accent = css("--accent"), surf2 = css("--surface-2"), muted = css("--ink-muted");
+
+      svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: surf2 }));
+
+      // pitch edges
+      var n0 = project(0), n1 = project(1);
+      svg.appendChild(el("polygon", {
+        points: [(W / 2 - n0.half) + "," + n0.y, (W / 2 + n0.half) + "," + n0.y,
+                 (W / 2 + n1.half) + "," + n1.y, (W / 2 - n1.half) + "," + n1.y].join(" "),
+        fill: "none", stroke: rule, "stroke-width": 1.3
+      }));
+
+      // four equal 15 m bands
+      for (var i = 0; i <= 4; i++) {
+        var d = i / 4, p = project(d);
+        svg.appendChild(el("line", {
+          x1: W / 2 - p.half, y1: p.y, x2: W / 2 + p.half, y2: p.y,
+          stroke: rule, "stroke-width": 1
+        }));
+        if (i < 4) {
+          var pm = project((i + 0.5) / 4);
+          var lbl = el("text", {
+            x: W / 2 + pm.half + 8, y: pm.y + 4, fill: faint,
+            "font-family": "var(--font-mono)", "font-size": 10
+          });
+          lbl.textContent = "15 m";
+          svg.appendChild(lbl);
+        }
+      }
+
+      // marker at constant real-world speed
+      var d = (Math.sin(t) + 1) / 2;
+      var p = project(d);
+      svg.appendChild(el("circle", { cx: W / 2, cy: p.y, r: 6.5, fill: accent }));
+
+      // apparent size bar: pixel length of a 15 m band at this depth
+      var here = project(Math.min(0.99, d)), next = project(Math.min(1, d + 0.25));
+      var px = Math.abs(here.y - next.y) * 3.2;
+      svg.appendChild(el("rect", { x: 16, y: H - 20, width: px, height: 7, fill: accent, opacity: 0.85 }));
+      var cap = el("text", { x: 16, y: H - 26, fill: muted, "font-family": "var(--font-mono)", "font-size": 10 });
+      cap.textContent = "apparent size of 15 m at this depth";
+      svg.appendChild(cap);
+    }
+
+    function loop() { t += 0.014; render(); raf = requestAnimationFrame(loop); }
+
+    REDRAW.push(render);
+    render();
+    if (!reduced) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (e.isIntersecting && !raf) loop();
+          else if (!e.isIntersecting && raf) { cancelAnimationFrame(raf); raf = null; }
+        });
+      }, { threshold: 0.1 });
+      io.observe(svg);
+    }
+  })();
+
+  /* ============================================================
+     FIG 01 — tracking association
+     ============================================================ */
+  (function () {
+    var svg = document.getElementById("trk-svg");
+    if (!svg) return;
+    var NFRAMES = 11, frame = 0, twoStage = false, timer = null;
+    var W = 380, H = 250, START = 34;
+
+    // three players; the middle one dips in confidence during occlusion
+    var STEP = 20;
+    function detections(f) {
+      var out = [];
+      var lanes = [44, 108, 172];
+      for (var i = 0; i < 3; i++) {
+        var x = START + f * STEP + i * 12;
+        var conf = 0.9;
+        if (i === 1 && f >= 5 && f <= 7) conf = 0.28;   // occluded
+        out.push({ i: i, x: x, y: lanes[i], w: 40, h: 40, conf: conf });
+      }
+      return out;
+    }
+    function iou(a, b) {
+      var x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+      var x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+      var inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      return inter / (a.w * a.h + b.w * b.h - inter);
+    }
+
+    function simulate(upto) {
+      var tracks = [], nextId = 1;
+      for (var f = 0; f <= upto; f++) {
+        var dets = detections(f);
+        var high = dets.filter(function (d) { return d.conf >= 0.5; });
+        var low = dets.filter(function (d) { return d.conf < 0.5; });
+        var used = [];
+
+        // motion model: predict where each track should be before matching.
+        // Without this step, a fast object's boxes never overlap between frames
+        // and IoU association fails completely -- this is the job a Kalman
+        // filter does in a real tracker.
+        tracks.forEach(function (tr) {
+          if (tr.dead) return;
+          tr.pred = { x: tr.box.x + tr.vx, y: tr.box.y + tr.vy, w: tr.box.w, h: tr.box.h };
+        });
+
+        function associate(pool) {
+          pool.forEach(function (d) {
+            if (used.indexOf(d) !== -1) return;
+            var best = null, bestIoU = 0.2;
+            tracks.forEach(function (tr) {
+              if (tr.dead || tr.seen === f) return;
+              var v = iou(tr.pred, d);
+              if (v > bestIoU) { bestIoU = v; best = tr; }
+            });
+            if (best) {
+              best.vx = d.x - best.box.x; best.vy = d.y - best.box.y;
+              best.box = d; best.seen = f; best.miss = 0;
+              used.push(d);
+            }
+          });
+        }
+        associate(high);
+        if (twoStage) associate(low);
+
+        // unmatched high-confidence detections start new tracks
+        high.forEach(function (d) {
+          if (used.indexOf(d) === -1) {
+            tracks.push({ id: nextId++, box: d, pred: d, vx: 0, vy: 0, seen: f, miss: 0, dead: false });
+            used.push(d);
+          }
+        });
+        tracks.forEach(function (tr) {
+          if (!tr.dead && tr.seen !== f) {
+            tr.miss++;
+            tr.box = tr.pred;                    // coast on the prediction
+            if (tr.miss > 2) tr.dead = true;
+          }
+        });
+      }
+      return { tracks: tracks, nextId: nextId - 1, dets: detections(upto) };
+    }
+
+    function render() {
+      var st = simulate(frame);
+      clear(svg);
+      var rule = css("--rule"), faint = css("--ink-faint"), ink = css("--ink"),
+          accent = css("--accent"), amber = css("--amber"), surf2 = css("--surface-2"),
+          ok = css("--ok");
+
+      svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: surf2 }));
+
+      // occlusion band
+      var ox = START + 5 * STEP - 10, ow = STEP * 2 + 40 + 24;
+      svg.appendChild(el("rect", { x: ox, y: 8, width: ow, height: H - 40, fill: amber, opacity: 0.10 }));
+      var ol = el("text", { x: ox + 4, y: 22, fill: amber, "font-family": "var(--font-mono)", "font-size": 10 });
+      ol.textContent = "OCCLUSION";
+      svg.appendChild(ol);
+
+      st.dets.forEach(function (d) {
+        var weak = d.conf < 0.5;
+        svg.appendChild(el("rect", {
+          x: d.x, y: d.y, width: d.w, height: d.h, fill: "none",
+          stroke: weak ? amber : faint, "stroke-width": weak ? 1.6 : 1.2,
+          "stroke-dasharray": weak ? "4 3" : "none"
+        }));
+        var c = el("text", { x: d.x + 3, y: d.y + 12, fill: weak ? amber : faint,
+                             "font-family": "var(--font-mono)", "font-size": 10 });
+        c.textContent = d.conf.toFixed(2);
+        svg.appendChild(c);
+      });
+
+      st.tracks.forEach(function (tr) {
+        if (tr.dead) return;
+        var coasting = tr.seen !== frame;
+        var b = tr.box;
+        var col = tr.id > 3 ? amber : accent;
+        svg.appendChild(el("rect", {
+          x: b.x - 3, y: b.y - 3, width: b.w + 6, height: b.h + 6,
+          fill: "none", stroke: col, "stroke-width": 2,
+          "stroke-dasharray": coasting ? "5 4" : "none",
+          opacity: coasting ? 0.75 : 1
+        }));
+        var t = el("text", { x: b.x - 3, y: b.y + b.h + 13, fill: col,
+                             "font-family": "var(--font-mono)", "font-size": 10.5, "font-weight": 600 });
+        t.textContent = "ID " + tr.id + (coasting ? " · predicted" : "");
+        svg.appendChild(t);
+      });
+
+      var msg = el("text", { x: 14, y: H - 12, fill: st.nextId > 3 ? amber : ok,
+                             "font-family": "var(--font-mono)", "font-size": 11 });
+      msg.textContent = st.nextId > 3
+        ? "track lost → new ID issued"
+        : "all three identities preserved";
+      svg.appendChild(msg);
+
+      document.getElementById("trk-frame").textContent = frame;
+      document.getElementById("trk-ids").textContent = st.nextId;
+    }
+
+    function stop() { if (timer) { clearInterval(timer); timer = null; }
+                      document.getElementById("trk-play").textContent = "Play"; }
+
+    document.getElementById("trk-play").addEventListener("click", function () {
+      if (timer) { stop(); return; }
+      this.textContent = "Pause";
+      timer = setInterval(function () {
+        frame = (frame + 1) % NFRAMES; render();
+        if (frame === 0) { /* loop */ }
+      }, reduced ? 1200 : 620);
+    });
+    document.getElementById("trk-step").addEventListener("click", function () {
+      stop(); frame = (frame + 1) % NFRAMES; render();
+    });
+    document.getElementById("trk-reset").addEventListener("click", function () {
+      stop(); frame = 0; render();
+    });
+    document.getElementById("trk-mode").addEventListener("click", function () {
+      twoStage = !twoStage;
+      this.setAttribute("aria-pressed", String(twoStage));
+      this.textContent = twoStage ? "Mode: ByteTrack two‑stage" : "Mode: high‑confidence only";
+      render();
+    });
+
+    REDRAW.push(render);
+    render();
+  })();
+
+  /* ============================================================
+     FIG 02 — team clustering
+     ============================================================ */
+  (function () {
+    var svg = document.getElementById("clu-svg");
+    if (!svg) return;
+    var W = 640, H = 320, k = 2;
+
+    // synthetic 2-D "embeddings": two kit clusters + keepers + referee
+    var pts = [];
+    (function seed() {
+      var rnd = (function (s) { return function () { s = (s * 16807) % 2147483647; return s / 2147483647; }; })(42);
+      var i;
+      for (i = 0; i < 11; i++) pts.push({ x: 150 + rnd() * 90, y: 90 + rnd() * 90, kind: 0 });
+      for (i = 0; i < 11; i++) pts.push({ x: 400 + rnd() * 90, y: 130 + rnd() * 90, kind: 1 });
+      pts.push({ x: 300, y: 255, kind: 2 });   // keeper A
+      pts.push({ x: 340, y: 268, kind: 2 });   // keeper B
+      pts.push({ x: 285, y: 45, kind: 3 });    // referee
+    })();
+
+    function kmeans(K) {
+      var cents = [];
+      if (K === 2) cents = [{ x: 180, y: 120 }, { x: 430, y: 170 }];
+      else cents = [{ x: 180, y: 120 }, { x: 430, y: 170 }, { x: 310, y: 250 }];
+      for (var it = 0; it < 25; it++) {
+        pts.forEach(function (p) {
+          var bi = 0, bd = Infinity;
+          cents.forEach(function (c, i) {
+            var d = (p.x - c.x) * (p.x - c.x) + (p.y - c.y) * (p.y - c.y);
+            if (d < bd) { bd = d; bi = i; }
+          });
+          p.c = bi;
+        });
+        cents = cents.map(function (c, i) {
+          var sx = 0, sy = 0, n = 0;
+          pts.forEach(function (p) { if (p.c === i) { sx += p.x; sy += p.y; n++; } });
+          return n ? { x: sx / n, y: sy / n } : c;
+        });
+      }
+      return cents;
+    }
+
+    function render() {
+      var cents = kmeans(k);
+      clear(svg);
+      var surf2 = css("--surface-2"), rule = css("--rule"), faint = css("--ink-faint"),
+          A = css("--team-a"), B = css("--team-b"), ink = css("--ink"), amber = css("--amber");
+
+      svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: surf2 }));
+      for (var gx = 0; gx <= W; gx += 64)
+        svg.appendChild(el("line", { x1: gx, y1: 0, x2: gx, y2: H, stroke: rule, "stroke-width": 0.5 }));
+      for (var gy = 0; gy <= H; gy += 64)
+        svg.appendChild(el("line", { x1: 0, y1: gy, x2: W, y2: gy, stroke: rule, "stroke-width": 0.5 }));
+
+      var colors = [A, B, ink];
+      var wrong = 0;
+
+      pts.forEach(function (p) {
+        var assigned = colors[p.c] || ink;
+        var isOutlier = p.kind >= 2;
+        // with k=2 an outlier is necessarily folded into a team
+        if (isOutlier && k === 2) wrong++;
+        svg.appendChild(el("circle", {
+          cx: p.x, cy: p.y, r: isOutlier ? 8 : 6.5,
+          fill: assigned,
+          stroke: isOutlier ? amber : css("--surface"),
+          "stroke-width": isOutlier ? 2.5 : 1
+        }));
+      });
+
+      cents.forEach(function (c, i) {
+        svg.appendChild(el("path", {
+          d: "M" + (c.x - 8) + " " + c.y + " H" + (c.x + 8) + " M" + c.x + " " + (c.y - 8) + " V" + (c.y + 8),
+          stroke: colors[i] || ink, "stroke-width": 2.5
+        }));
+      });
+
+      [["outfield — clusters cleanly", faint, false],
+       ["keepers + referee — a 3rd and 4th kit", amber, true]].forEach(function (r, i) {
+        var y = H - 34 + i * 17;
+        svg.appendChild(el("circle", { cx: 22, cy: y - 4, r: 6, fill: "none",
+                                       stroke: r[1], "stroke-width": r[2] ? 2.5 : 1.5 }));
+        var t = el("text", { x: 36, y: y, fill: r[1], "font-family": "var(--font-mono)", "font-size": 11 });
+        t.textContent = r[0];
+        svg.appendChild(t);
+      });
+
+      document.getElementById("clu-err").textContent = wrong;
+    }
+
+    document.getElementById("clu-k2").addEventListener("click", function () {
+      k = 2; this.setAttribute("aria-pressed", "true");
+      document.getElementById("clu-k3").setAttribute("aria-pressed", "false"); render();
+    });
+    document.getElementById("clu-k3").addEventListener("click", function () {
+      k = 3; this.setAttribute("aria-pressed", "true");
+      document.getElementById("clu-k2").setAttribute("aria-pressed", "false"); render();
+    });
+
+    REDRAW.push(render);
+    render();
+  })();
+
+  /* ============================================================
+     FIG 05 — object size vs inference resolution
+     ============================================================ */
+  (function () {
+    var svg = document.getElementById("ball-svg");
+    if (!svg) return;
+    var W = 640, H = 260;
+
+    var rows = [
+      { label: "4K source", scale: 1 },
+      { label: "1280 px inference", scale: 1280 / 3840 },
+      { label: "640 px inference", scale: 640 / 3840 }
+    ];
+    var PLAYER_PX = 120, BALL_PX = 11, THRESHOLD = 8;
+
+    function render() {
+      clear(svg);
+      var surf2 = css("--surface-2"), rule = css("--rule"), faint = css("--ink-faint"),
+          ink = css("--ink"), accent = css("--accent"), amber = css("--amber"), muted = css("--ink-muted");
+
+      svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: surf2 }));
+
+      var x0 = 168, maxPx = 130, scaleX = (W - x0 - 90) / maxPx;
+
+      // detectability threshold
+      var tx = x0 + THRESHOLD * scaleX;
+      svg.appendChild(el("line", { x1: tx, y1: 26, x2: tx, y2: H - 40, stroke: amber, "stroke-width": 1.4, "stroke-dasharray": "4 3" }));
+      var tl = el("text", { x: tx + 6, y: 22, fill: amber, "font-family": "var(--font-mono)", "font-size": 10 });
+      tl.textContent = "~8 px reliable-detection floor";
+      svg.appendChild(tl);
+
+      rows.forEach(function (r, i) {
+        var y = 46 + i * 64;
+        var lbl = el("text", { x: 14, y: y + 14, fill: ink, "font-family": "var(--font-mono)", "font-size": 12 });
+        lbl.textContent = r.label;
+        svg.appendChild(lbl);
+
+        [{ v: PLAYER_PX * r.scale, c: accent, n: "player" },
+         { v: BALL_PX * r.scale, c: amber, n: "ball" }].forEach(function (b, j) {
+          var by = y + j * 22;
+          var w = Math.max(1.5, b.v * scaleX);
+          svg.appendChild(el("rect", { x: x0, y: by, width: w, height: 14, fill: b.c, opacity: j ? 1 : 0.75 }));
+          var t = el("text", { x: x0 + w + 8, y: by + 12, fill: muted,
+                               "font-family": "var(--font-mono)", "font-size": 11 });
+          t.textContent = b.n + " " + b.v.toFixed(b.v < 10 ? 1 : 0) + " px" +
+                          (b.v < THRESHOLD ? "  ← below floor" : "");
+          svg.appendChild(t);
+        });
+      });
+
+      var foot = el("text", { x: 14, y: H - 14, fill: faint, "font-family": "var(--font-mono)", "font-size": 10 });
+      foot.textContent = "assumes a 120 px player and 11 px ball in the 3840 px source frame";
+      svg.appendChild(foot);
+    }
+    REDRAW.push(render);
+    render();
+  })();
+
+  /* Every figure bakes in the palette at draw time, so redraw them all whenever the
+     theme changes -- both the viewer's explicit toggle and the OS-level preference. */
+  function redrawAll() {
+    REDRAW.forEach(function (fn) { try { fn(); } catch (e) { /* keep going */ } });
+  }
+  new MutationObserver(redrawAll).observe(document.documentElement, {
+    attributes: true, attributeFilter: ["data-theme"]
+  });
+  var scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  if (scheme.addEventListener) scheme.addEventListener("change", redrawAll);
+})();
+</script>

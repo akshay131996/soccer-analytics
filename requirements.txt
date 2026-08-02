@@ -1,0 +1,10 @@
+torch
+torchvision
+ultralytics
+supervision>=0.29,<0.30   # sv.ByteTrack is deprecated/removed in 0.30+
+transformers<5             # SigLIP embedder; v5 needs torch.distributed.tensor.DTensor, absent on torch<2.5
+scikit-learn               # k-means for team clustering
+opencv-python
+numpy<2.4                  # supervision's LineZone needs np.cross on 2-D vectors (removed in 2.4+)
+matplotlib
+pillow
