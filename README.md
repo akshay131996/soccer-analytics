@@ -9,13 +9,18 @@ learning: a pitch is a plane, so one 3×3 matrix converts broadcast pixels into 
 
 ## Start here
 
+**📖 [Read the write-ups online](https://akshay131996.github.io/soccer-analytics/)** — the HTML pages
+below render with all their interactive figures working.
+
 | Document | What it's for |
 |---|---|
 | **[`run_all.ipynb`](run_all.ipynb)** | The build. Every stage opens with an explanation of *why* before the code that does it — run it top to bottom on a GPU. |
-| **[`walkthrough.html`](walkthrough.html)** | Architecture and design document: data contracts, failure modes, trade-offs, with interactive homography and tracking figures. Written *before* the code. |
-| **[`label_assignment.html`](label_assignment.html)** | Detector internals — why anchors and NMS both disappeared, and how one-to-one matching actually works. |
+| **[`walkthrough.html`](https://akshay131996.github.io/soccer-analytics/walkthrough.html)** | Architecture and design document: data contracts, failure modes, trade-offs, with interactive homography and tracking figures. Written *before* the code. |
+| **[`label_assignment.html`](https://akshay131996.github.io/soccer-analytics/label_assignment.html)** | Detector internals — why anchors and NMS both disappeared, and how one-to-one matching actually works. |
+| **[`concepts.html`](https://akshay131996.github.io/soccer-analytics/concepts.html)** | The four techniques doing the real work — tracking, projective geometry, embeddings, detection metrics — each taken apart, then composed in an interactive concept map. |
 
-The two HTML pages are self-contained; open them in any browser.
+All three HTML pages are self-contained: they work from the link above, or clone the repo
+and open them in any browser. Viewing them on github.com shows raw source, not the page.
 
 ## Run it
 
