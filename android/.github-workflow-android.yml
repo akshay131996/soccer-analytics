@@ -1,0 +1,115 @@
+# Android CI/CD.
+#
+# Copy this to .github/workflows/android.yml in whichever repo holds the app.
+# It is kept here with a placeholder name so it does not start running before the
+# Android project actually exists.
+#
+# Two jobs:
+#   check    - every push and PR. Builds debug, runs unit tests and lint. Touches nothing.
+#   release  - only on a v* tag. Builds a signed AAB and ships it to Play's internal track.
+#
+# Before the release job can ever succeed:
+#   1. Upload ONE AAB manually through the Play Console. The Play Developer API refuses
+#      to create a release for an app that has never had one -- CI cannot bootstrap it.
+#   2. Create a Google Cloud service account, grant it "Release manager" in
+#      Play Console -> Users and permissions, and paste its JSON key into the
+#      PLAY_SERVICE_ACCOUNT_JSON secret.
+#   3. Set the signing secrets (see below). Back the keystore up somewhere that is not
+#      GitHub -- losing it is a multi-day support ordeal.
+
+name: android
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'          # AGP 9 requires JDK 17 or newer
+
+      # Caches ~/.gradle and configures the wrapper. Cuts a cold build from minutes
+      # to seconds on subsequent runs.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Lint
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: Assemble debug
+        run: ./gradlew assembleDebug --stacktrace
+
+      # Lint and test reports are only useful when something fails, which is exactly
+      # when you cannot reproduce it locally.
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The keystore is stored base64-encoded because GitHub secrets are text-only.
+      #   base64 -w0 upload-keystore.jks | clip     (Windows: use clip.exe)
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      # versionCode must strictly increase on every upload, forever. Deriving it from
+      # the run number makes that automatic -- Play permanently rejects duplicates, and
+      # hand-editing it is how people burn a version number by accident.
+      - name: Build signed AAB
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease --stacktrace \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName=${GITHUB_REF_NAME#v}
+
+      - name: Upload to Play (internal track)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.akshay.soccerlens          # must match applicationId exactly
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      - name: Keep the AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: aab-${{ github.ref_name }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
