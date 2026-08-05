@@ -71,6 +71,7 @@
   .c-arch .tag{color:var(--geo)}  .c-arch:hover{border-color:var(--geo)}  .c-arch .go{color:var(--geo)}
   .c-det  .tag{color:var(--amber)} .c-det:hover{border-color:var(--amber)} .c-det .go{color:var(--amber)}
   .c-con  .tag{color:var(--sig)}  .c-con:hover{border-color:var(--sig)}  .c-con .go{color:var(--sig)}
+  .c-gt   .tag{color:var(--gt)}   .c-gt:hover{border-color:var(--gt)}    .c-gt .go{color:var(--gt)}
 
   /* pipeline strip */
   .pipe{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:1.4rem 0 1.6rem;
@@ -142,6 +143,12 @@
         <span class="tag">Concepts</span>
         <h3>How it all fits</h3>
         <p>The four techniques doing the real work — tracking, projective geometry, embeddings and detection metrics — taken apart individually, then composed in an interactive concept map.</p>
+        <span class="go">Read →</span>
+      </a>
+      <a class="card c-gt" href="ground_truth.html">
+        <span class="tag">Evaluation</span>
+        <h3>Ground truth</h3>
+        <p>What you can measure once you have it. Why MOTA and IDF1 disagree by construction, what HOTA's detection/association split reveals, and why calibration error stays invisible until it's 8 m.</p>
         <span class="go">Read →</span>
       </a>
     </div>
