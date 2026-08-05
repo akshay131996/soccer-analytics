@@ -1,0 +1,21 @@
+# Worker deps. Pins carry the same hard-won reasons as the project root's
+# requirements.txt -- see LEARNINGS.md in the traffic-lens repo for the full stories.
+
+runpod>=1.7,<2
+requests>=2.31
+
+ultralytics>=8.4,<9
+
+# supervision removed ByteTrack in 0.30. The tracker this pipeline depends on only
+# exists below that line.
+supervision>=0.29,<0.30
+
+# numpy 2.4 removed np.cross for 2-D vectors, which supervision's LineZone calls.
+numpy<2.4
+
+opencv-python-headless>=4.10        # headless: the worker has no display
+scikit-learn>=1.5
+
+# Only needed for --embedder siglip. transformers 5.x requires a torch.distributed
+# DTensor symbol absent from torch 2.4.1, which breaks the import outright.
+# transformers<5

@@ -1,0 +1,21 @@
+name = "soccer-control-plane"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# EU jurisdiction. The bucket holds user-uploaded video that will contain identifiable
+# people, and the developer is EU-based -- keep the data in the EU by construction
+# rather than by policy.
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "soccer-videos"
+
+[[kv_namespaces]]
+binding = "JOBS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+RUNPOD_ENDPOINT_ID = "REPLACE_WITH_ENDPOINT_ID"
+
+# Secrets are NOT set here. Set them with:
+#   wrangler secret put RUNPOD_API_KEY
+#   wrangler secret put SIGNING_SECRET

@@ -62,11 +62,21 @@ def collect_crops(model, source, player_ids, target=200, max_scan=120,
     quota is met -- or the budget runs out -- works on any footage.
     """
     crops = []
+    i = -1                       # bound before the loop: a video that yields zero
+                                 # frames (unreadable codec, truncated upload) would
+                                 # otherwise raise UnboundLocalError below, reporting
+                                 # a problem that has nothing to do with the real one.
     for i, frame in enumerate(sv.get_video_frames_generator(source)):
         if i >= max_scan or len(crops) >= target:
             break
         det = sv.Detections.from_ultralytics(model(frame, conf=conf, imgsz=imgsz, verbose=False)[0])
         crops += crops_from(frame, det[np.isin(det.class_id, player_ids)])
+    if i < 0:
+        raise ValueError(
+            "the video yielded no frames at all. It is unreadable, truncated, or in a "
+            "codec OpenCV was not built for (HEVC/H.265 from a phone camera is the "
+            "usual culprit). Re-encode to H.264 before processing."
+        )
     if verbose:
         print(f"collected {len(crops)} player crops from {min(i + 1, max_scan)} frames")
     return crops
@@ -84,6 +94,7 @@ def process_video(
     max_frames: int = 0,
     fit_frames: int = 20,
     verbose: bool = True,
+    on_progress=None,
 ) -> dict:
     """Run the full pipeline over one clip and write an annotated video.
 
@@ -112,6 +123,12 @@ def process_video(
     fps = info.fps
     tracker = sv.ByteTrack(frame_rate=fps)
 
+    # 15 m/s sits comfortably above a world-class sprint (~12.4 m/s) while still
+    # rejecting the metre-scale jumps an ID switch produces. Derived from fps so the
+    # threshold means the same thing on 25, 30 and 60 fps footage.
+    MAX_PLAYER_SPEED_MS = 15.0
+    max_step_m = MAX_PLAYER_SPEED_MS / fps
+
     ellipse_ann = sv.EllipseAnnotator(color=TEAM_COLORS, thickness=2)
     label_ann = sv.LabelAnnotator(color=TEAM_COLORS, text_scale=0.5,
                                   text_position=sv.Position.BOTTOM_CENTER)
@@ -121,9 +138,14 @@ def process_video(
     # ---- pass 1: fit the team clusters -------------------------------------------
     # k-means cannot predict before it has been fitted, and the two kit colours are
     # not known until players have been observed -- hence reading the clip twice.
+    if on_progress:
+        on_progress("fitting", 0.0)
     teams = TeamClassifier(embedder)
+    # `fit_frames` is the number of frames worth scanning per ~6 expected players.
+    # It used to be floored at 120, which silently made every value <= 20 -- including
+    # the default -- behave identically, so the parameter did nothing at all.
     fit_crops = collect_crops(model, source, player_ids, target=200,
-                              max_scan=max(fit_frames * 6, 120),
+                              max_scan=max(fit_frames, 1) * 6,
                               imgsz=imgsz, conf=conf, verbose=verbose)
     teams.fit(fit_crops)          # raises a descriptive error if it found too few
     if verbose:
@@ -133,10 +155,14 @@ def process_video(
     team_of = {}                       # tracker_id -> team, decided once and cached
     distance_m = defaultdict(float)
     last_pos_m, speed_win = {}, defaultdict(lambda: deque(maxlen=int(fps)))
+    top_speed_ms = defaultdict(float)
     possession = defaultdict(int)
     poss_hist = deque(maxlen=int(fps // 2) or 1)
     seen_frames = defaultdict(int)
     n_frames = 0
+    # total_frames can be None or 0 for containers without a reliable index, so every
+    # use of this is guarded rather than assumed.
+    total_target = max_frames or (info.total_frames or 0)
 
     with sv.VideoSink(output_path, video_info=info) as sink:
         for i, frame in enumerate(sv.get_video_frames_generator(source)):
@@ -186,12 +212,22 @@ def process_video(
                 for tid, pos in zip(det.tracker_id, pitch_pos):
                     if tid in last_pos_m:
                         step = float(np.linalg.norm(pos - last_pos_m[tid]))
-                        # >2 m between frames at 25fps is 180 km/h -- physically
-                        # impossible, so it's an ID switch teleport, not motion.
-                        # Discarding it makes distance a LOWER BOUND, not a measurement.
-                        if step < 2.0:
+                        # A teleport guard has to be a SPEED, not a per-frame distance.
+                        # The old fixed 2.0 m/frame meant 180 km/h at 25 fps but 432
+                        # km/h at 60 fps -- so it filtered almost nothing on
+                        # high-frame-rate phone footage and over-filtered downsampled
+                        # clips. Discarding these still makes distance a LOWER BOUND.
+                        if step < max_step_m:
                             distance_m[tid] += step
                             speed_win[tid].append(step)
+                            # speed_win used to be written every frame and never read.
+                            # A full window is exactly one second of motion, so its
+                            # mean step x fps is metres per second.
+                            w = speed_win[tid]
+                            if len(w) == w.maxlen:
+                                v = sum(w) / len(w) * fps
+                                if v > top_speed_ms[tid]:
+                                    top_speed_ms[tid] = v
                     last_pos_m[tid] = pos
 
                 # possession = team of the player nearest the ball, with hysteresis
@@ -213,6 +249,8 @@ def process_video(
                 annotated[-mh:, :mini.shape[1]] = mini
 
             sink.write_frame(annotated)
+            if on_progress and i % 10 == 0 and total_target:
+                on_progress("processing", min(1.0, (i + 1) / total_target))
             if verbose and i % 25 == 0:
                 print(f"  frame {i}: {len(det)} players"
                       + ("" if ball_xy is None else ", ball found"))
@@ -227,6 +265,10 @@ def process_video(
         "has_pitch_mapping": mapper is not None,
         "ball_class_available": bool(ball_ids),
         "top_distance_m": [{"id": int(t), "metres": round(d, 1)} for t, d in top],
+        "top_speed_kmh": [
+            {"id": int(t), "kmh": round(v * 3.6, 1)}
+            for t, v in sorted(top_speed_ms.items(), key=lambda kv: -kv[1])[:5]
+        ] or None,
         "possession_pct": ({str(k): round(100 * v / total_poss, 1) for k, v in possession.items()}
                            if total_poss else None),
         "output_path": output_path,
