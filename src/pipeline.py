@@ -41,11 +41,22 @@ def class_ids_for(model, names: set) -> list:
 
 
 def load_model(name: str) -> YOLO:
+    """Load weights, or fail loudly.
+
+    This used to swallow *any* exception and quietly substitute yolo11n.pt. That is
+    the worst possible behaviour for a pipeline that reports metrics: every downstream
+    number would be attributed to a model that never ran, and the only evidence was a
+    print() nobody reads in a batch job. A missing checkpoint is a deployment error,
+    not something to paper over.
+    """
     try:
         return YOLO(name)
     except Exception as e:
-        print(f"could not load {name} ({e}); falling back to yolo11n.pt")
-        return YOLO("yolo11n.pt")
+        raise ValueError(
+            f"could not load weights '{name}': {e}. Check the path, or pass "
+            f"--weights with a checkpoint that exists. Results are attributed to "
+            f"specific weights, so no substitute is loaded automatically."
+        ) from e
 
 
 def crops_from(frame, det):
@@ -244,9 +255,17 @@ def process_video(
 
                 mini = draw_minimap(pitch_pos[team_ids == 0], pitch_pos[team_ids == 1],
                                     mapper.to_pitch(np.array([ball_xy]))[0] if ball_xy is not None else None)
+                # The minimap keeps a 105:68 aspect, so its width is ~1.54x its height.
+                # Sizing it purely off frame height overflowed the frame width on any
+                # source narrower than ~0.39x its height -- portrait phone video sits
+                # close to that line. Fit to BOTH dimensions.
                 mh = info.height // 4
-                mini = cv2.resize(mini, (int(mini.shape[1] * mh / mini.shape[0]), mh))
-                annotated[-mh:, :mini.shape[1]] = mini
+                mw = int(mini.shape[1] * mh / mini.shape[0])
+                if mw > info.width:
+                    mw = info.width
+                    mh = int(mini.shape[0] * mw / mini.shape[1])
+                mini = cv2.resize(mini, (mw, mh))
+                annotated[-mh:, :mw] = mini
 
             sink.write_frame(annotated)
             if on_progress and i % 10 == 0 and total_target:
@@ -263,7 +282,17 @@ def process_video(
         "players_tracked": len(seen_frames),
         "mean_track_length_frames": round(float(np.mean(list(seen_frames.values()))), 1) if seen_frames else 0,
         "has_pitch_mapping": mapper is not None,
+        # Carry the calibration's own error estimate next to every metric derived from
+        # it. A distance in metres is only as good as the homography that produced it,
+        # and that quality was previously invisible.
+        "calibration": mapper.quality() if mapper is not None else None,
         "ball_class_available": bool(ball_ids),
+        "weights": getattr(getattr(model, "ckpt_path", None), "name", None) or str(weights),
+        "classes_detected": {
+            "players": [model.names[i] for i in player_ids],
+            "ball": [model.names[i] for i in ball_ids],
+            "referee": [model.names[i] for i in ref_ids],
+        },
         "top_distance_m": [{"id": int(t), "metres": round(d, 1)} for t, d in top],
         "top_speed_kmh": [
             {"id": int(t), "kmh": round(v * 3.6, 1)}
