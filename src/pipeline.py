@@ -106,6 +106,11 @@ def process_video(
     fit_frames: int = 20,
     verbose: bool = True,
     on_progress=None,
+    nms_iou: float = 0.7,
+    track_activation_threshold: float = 0.25,
+    lost_track_buffer: int | None = None,
+    minimum_matching_threshold: float = 0.8,
+    team_votes_target: int = 15,
 ) -> dict:
     """Run the full pipeline over one clip and write an annotated video.
 
@@ -132,7 +137,17 @@ def process_video(
 
     info = sv.VideoInfo.from_video_path(source)
     fps = info.fps
-    tracker = sv.ByteTrack(frame_rate=fps)
+    # ByteTrack's defaults assume ~25-30 fps and a broadly static camera. On 60 fps
+    # footage with a camera that pans with play, a 30-frame buffer is half a second,
+    # so a player briefly occluded or briefly off-frame comes back as a new identity.
+    # Measured on FC26: 308 tracks for ~20 players over 25 s. Scale the buffer with
+    # frame rate and hold tracks for ~2 seconds instead.
+    tracker = sv.ByteTrack(
+        frame_rate=fps,
+        track_activation_threshold=track_activation_threshold,
+        lost_track_buffer=lost_track_buffer if lost_track_buffer is not None else int(fps * 2),
+        minimum_matching_threshold=minimum_matching_threshold,
+    )
 
     # 15 m/s sits comfortably above a world-class sprint (~12.4 m/s) while still
     # rejecting the metre-scale jumps an ID switch produces. Derived from fps so the
@@ -163,7 +178,8 @@ def process_video(
         print(f"team clusters fitted on {len(fit_crops)} crops")
 
     # ---- pass 2: track, assign, map, render --------------------------------------
-    team_of = {}                       # tracker_id -> team, decided once and cached
+    team_of = {}                       # tracker_id -> current majority team
+    team_votes = defaultdict(lambda: defaultdict(int))   # tracker_id -> {team: votes}
     distance_m = defaultdict(float)
     last_pos_m, speed_win = {}, defaultdict(lambda: deque(maxlen=int(fps)))
     top_speed_ms = defaultdict(float)
@@ -185,6 +201,12 @@ def process_video(
             all_det = sv.Detections.from_ultralytics(result)
 
             det = all_det[np.isin(all_det.class_id, player_ids)]
+            # YOLO26 is NMS-free and should not emit overlapping boxes for one object,
+            # but measured on FC26 footage 8.6% of detection pairs overlapped at
+            # IoU > 0.6. Each spurious box becomes its own track, which is a direct
+            # contributor to the ID count.
+            if nms_iou and len(det) > 1:
+                det = det.with_nms(threshold=nms_iou)
             det = tracker.update_with_detections(det)
 
             ball_xy = None
@@ -198,11 +220,24 @@ def process_video(
             # tracker_id once and reuse. Cheap with the histogram embedder, essential
             # with SigLIP (one transformer pass per player per frame otherwise), and
             # it also stops the assignment flickering between frames.
-            new_idx = [j for j, tid in enumerate(det.tracker_id) if tid not in team_of]
-            if new_idx:
-                crops = crops_from(frame, det[np.array(new_idx)])
-                for j, t in zip(new_idx, teams.predict(crops)):
-                    team_of[det.tracker_id[j]] = int(t)
+            # Team is a property of the player, not of the frame -- but deciding it
+            # from ONE crop at track birth is a single roll of a weak classifier.
+            # Measured on FC26: the k-means silhouette is 0.386, so a large minority
+            # of crops sit near the boundary, and a player occluded or motion-blurred
+            # at the moment their track started got a coin flip that then stuck.
+            # Vote instead: keep classifying until a track has `team_votes_target`
+            # observations, then freeze the majority. Costs a few extra histograms
+            # per track, which is nothing next to the detector.
+            voting = [j for j, tid in enumerate(det.tracker_id)
+                      if sum(team_votes[tid].values()) < team_votes_target]
+            if voting:
+                crops = crops_from(frame, det[np.array(voting)])
+                for j, t in zip(voting, teams.predict(crops)):
+                    team_votes[det.tracker_id[j]][int(t)] += 1
+
+            for tid in det.tracker_id:
+                v = team_votes[tid]
+                team_of[tid] = max(v, key=v.get) if v else 0
             team_ids = np.array([team_of.get(t, 0) for t in det.tracker_id], dtype=int)
 
             for tid in det.tracker_id:

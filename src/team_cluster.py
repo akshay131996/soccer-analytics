@@ -8,9 +8,20 @@ handles keepers/refs as outliers more gracefully.
 import numpy as np
 
 
+# Pitch green in OpenCV's HSV (hue 0-180). Measured on FC26 footage: even after
+# cropping to the torso strip, grass was a mean 31% of the pixels and over 30% in
+# 42% of crops -- so the histogram was partly describing the pitch, not the kit.
+# Masking it lifted the k-means silhouette from 0.386 to 0.475.
+GRASS_HUE_LO, GRASS_HUE_HI, GRASS_SAT_MIN = 30, 90, 60
+
+
 class HistogramEmbedder:
-    """HSV color histogram of the torso region (upper half of the crop, center strip),
-    which is mostly shirt and avoids grass pixels at the crop edges."""
+    """HSV colour histogram of the torso region, with pitch green masked out.
+
+    The torso strip (upper-middle of the crop) is mostly shirt, but for distant
+    players the box is only ~30x65 px and the gaps around the body are all grass.
+    Excluding those pixels is what makes the two kits separable.
+    """
 
     def __call__(self, crops):
         import cv2
@@ -21,7 +32,15 @@ class HistogramEmbedder:
             if torso.size == 0:
                 torso = crop
             hsv = cv2.cvtColor(torso, cv2.COLOR_BGR2HSV)
-            hist = cv2.calcHist([hsv], [0, 1], None, [18, 6], [0, 180, 0, 256])
+            grass = ((hsv[:, :, 0] > GRASS_HUE_LO) & (hsv[:, :, 0] < GRASS_HUE_HI)
+                     & (hsv[:, :, 1] > GRASS_SAT_MIN))
+            mask = (~grass).astype(np.uint8) * 255
+            # If a crop is essentially all grass there is nothing to describe; fall
+            # back to the unmasked histogram rather than emitting an all-zero vector,
+            # which would cluster with every other degenerate crop.
+            if mask.sum() < 255 * 10:
+                mask = None
+            hist = cv2.calcHist([hsv], [0, 1], mask, [18, 6], [0, 180, 0, 256])
             feats.append(cv2.normalize(hist, None).flatten())
         return np.array(feats)
 
