@@ -13,10 +13,25 @@ recoverable from the code.
 syntax-checked; almost none of it is verified against real output. Treat any claim about
 behaviour as unconfirmed unless there is an artifact in `outputs/` backing it.
 
-**Two of the three headline features are dead code on the weights that exist.** With a
-COCO checkpoint, `class_ids_for(model, BALL_NAMES)` returns `[]`, so `ball_xy` is always
-`None`, the possession block never executes, and `stats["possession_pct"]` is always
-`None`. This is not "performs badly" — it has never run.
+**Possession has never produced a number, but not for the reason you might assume.**
+Verified on the pod against `yolo26n.pt`:
+
+```
+players : [0]  ['person']
+ball    : [32] ['sports ball']     <- COCO HAS a ball class
+referee : []                       <- genuinely absent
+```
+
+So `ball_ids` is *not* empty. The real chain is: possession sits inside
+`if mapper is not None`, `mapper` is only built when `keypoints` are passed, and
+**keypoints have never been supplied** because they are hand-authored JSON with no
+picker. The blocker is calibration, not the ball class.
+
+What COCO genuinely lacks is `referee` and `goalkeeper` — the latter absorbed into
+`person`, which is why k=2 misassigns them. And COCO's `sports ball` was trained on
+large, centred, unblurred balls, so it will rarely fire on a ~10 px motion-blurred
+football. The fine-tune is still worth doing; it is an accuracy and class-coverage win,
+not the resurrection of dead code.
 
 The unblock is `finetune_detector.ipynb`: Roboflow's four-class set
 (`ball / player / goalkeeper / referee`). Run it on Colab (free T4) rather than a paid

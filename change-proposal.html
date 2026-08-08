@@ -168,19 +168,23 @@
 
     <div class="stats">
       <div class="stat"><div class="v" style="color:var(--gt)">None</div><div class="k">possession_pct</div><div class="s">every run, so far</div></div>
-      <div class="stat"><div class="v" style="color:var(--gt)">0</div><div class="k">ball detections</div><div class="s">no such COCO class</div></div>
+      <div class="stat"><div class="v" style="color:var(--amber)">weak</div><div class="k">ball class</div><div class="s">COCO <code>sports ball</code>, wrong scale</div></div>
       <div class="stat"><div class="v" style="color:var(--amber)">k=2</div><div class="k">forced kits</div><div class="s">keepers, referees</div></div>
       <div class="stat"><div class="v" style="color:var(--amber)">—</div><div class="k">calibration error</div><div class="s">never measured</div></div>
     </div>
 
     <h3>The chain</h3>
-    <p>On COCO weights <code>ball_ids</code> resolves to an empty list. So <code>ball_xy</code> is always <code>None</code>. So the possession block, which sits inside <code>if ball_xy is not None</code>, never executes. So <code>possession_pct</code> is always <code>None</code>.</p>
+    <p>Possession sits inside <code>if mapper is not None</code>. <code>mapper</code> is only built when <code>keypoints</code> are passed. Keypoints are hand-authored JSON with no picker and no auto-detection, so <strong>they have never been supplied</strong> — and the block has therefore never executed.</p>
 
-    <p>That is not a model that performs badly. It is a feature that has never run once — and it looked fine, because the pipeline completed without error every time.</p>
+    <p>The blocker is calibration, not the detector.</p>
 
     <div class="trap">
-      <span class="lbl">The pattern, for the third time</span>
-      <p>A silent failure that produces plausible output. Traffic Lens had five. This project has its own: a dead code path, and a calibration that cannot report its own error. The fix in both cases was never cleverer code — it was having something to check against.</p>
+      <span class="lbl">A correction, and the reason it belongs here</span>
+      <p>An earlier version of this page claimed <code>ball_ids</code> was empty on COCO weights. That was wrong, and it was wrong in the way this whole project is about: it was plausible, it was repeated confidently, and nobody ran the two-line check. Verified against <code>yolo26n.pt</code>:</p>
+      <div style="font-family:var(--font-mono);font-size:.82rem;background:var(--surface-2);border:1px solid var(--rule);padding:.7rem .85rem;margin:.6rem 0 .8rem;overflow-x:auto;white-space:pre">players : [0]  ['person']
+ball    : [32] ['sports ball']   &lt;- COCO has one
+referee : []                     &lt;- genuinely absent</div>
+      <p>COCO <em>does</em> carry a ball class. What it lacks is <code>referee</code> and <code>goalkeeper</code> — the latter absorbed into <code>person</code>, which is exactly why k=2 misassigns them.</p>
     </div>
 
     <h3>Two datasets, two different jobs</h3>
@@ -253,8 +257,8 @@
         <thead><tr><th>Today</th><th>With four classes</th></tr></thead>
         <tbody>
           <tr>
-            <td><strong>Possession</strong> — <span class="no">never computed</span>. <code>ball_ids</code> is empty, so the block never executes.</td>
-            <td class="yes">A real number, for the first time.</td>
+            <td><strong>Possession</strong> — <span class="no">never computed</span>, because no keypoints have ever been supplied and the block sits inside <code>if mapper is not None</code>.</td>
+            <td class="yes">Unblocked by calibration; a reliable ball makes it trustworthy.</td>
           </tr>
           <tr>
             <td><strong>Keepers &amp; referees</strong> — <span class="no">forced into an outfield team</span>. k=2 cannot represent four kits.</td>
