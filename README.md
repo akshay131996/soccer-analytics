@@ -75,13 +75,87 @@ flickering between frames.
 - **Sanity anchor from outside the code:** a footballer covers ~10–12 km in 90 minutes.
   The notebook extrapolates your clip and flags implausible values.
 
+## Results
+
+First end-to-end runs, on 25 s (1500 frames) of EA FC 26 gameplay at `imgsz=1280`,
+RTX 4000 Ada. Scripts in [`scripts/`](scripts/); raw numbers in `outputs/`.
+
+### The detector
+
+YOLO26n fine-tuned on [Roboflow football-players-detection](https://universe.roboflow.com/roboflow-jvuqo/football-players-detection-3zvbc)
+v20 — 4 classes, 298 train / 49 val images, 50 epochs at 1280 px, 8.5 min:
+
+| class | AP50 | AP50-95 |
+|---|---|---|
+| player | **0.958** | 0.687 |
+| referee | 0.853 | 0.524 |
+| goalkeeper | 0.786 | 0.564 |
+| **ball** | **0.499** | **0.222** |
+| *mean* | *0.774* | *0.499* |
+
+**Read the per-class column, not the mean.** 0.774 looks respectable and is carried
+almost entirely by `player` at 0.958. The ball — the object every possession metric
+depends on — scores half that. A single averaged number hides exactly the failure that
+matters most.
+
+### Fixing what the first run exposed
+
+The first annotated video looked convincing and was wrong. Measuring before changing
+anything ([`scripts/diagnose_fc26.py`](scripts/diagnose_fc26.py)):
+
+```
+duplicate detection pairs (IoU>0.6)   8.55% of 3744 detections
+grass inside the torso crop           mean 31%, >30% in 42% of crops
+k-means silhouette                    0.386  (weak)
+cluster median hues                   108 (navy) and 11 (orange)
+```
+
+That last line corrected a wrong diagnosis: the clustering *was* separating the kits
+correctly. The real fault was that team was decided from **one crop at track birth** —
+with a silhouette of 0.386 that is close to a coin flip per track, and it then stuck.
+
+| | v1 | v2 (fixes) | v3 (+ fine-tune) |
+|---|---|---|---|
+| tracks (~20 players present) | 308 | 208 | **182** |
+| mean track length (frames) | 83.0 | **120.3** | 99.4 |
+| team labels | mixed across both kits | consistent | consistent |
+| keepers / referees | forced into a team | forced into a team | **own roles** |
+
+Changes: mask pitch green out of the histogram (silhouette 0.386 → 0.475), vote over 15
+observations instead of deciding once, NMS at IoU 0.7, and a tracker buffer that scales
+with frame rate (ByteTrack's default 30 frames is 0.5 s at 60 fps).
+
+v3 `roles_tracked`: team 0 **75**, team 1 **99**, goalkeeper **3**, referee **5** —
+keepers and referees no longer polluting the clustering.
+
+### What these numbers do not tell you
+
+**182 tracks for ~20 players is still wrong, and this is not a measurement of tracking
+quality.** ByteTrack matches on IoU with no camera-motion compensation, and FC 26's
+camera pans with play, so every box moves between frames. Some of the 182 is legitimate
+re-entry as players leave and rejoin frame; without ground-truth tracks there is no way
+to separate the two. That needs SoccerNet and HOTA — see
+[`ground_truth.html`](https://akshay131996.github.io/soccer-analytics/ground_truth.html).
+
+Note also that v3's mean track length *fell* versus v2. The fine-tuned detector finds
+more marginal, distant players, which creates additional short tracks. Better detection,
+worse-looking tracking metric — which is why the two must be read together.
+
+No calibration was supplied, so there is no minimap, no distances and no possession:
+FC 26's camera moves, and the homography is fitted once and reused, so a single
+calibration would be silently wrong for most of the clip.
+
 ## Status
 
 - [x] Pipeline, team clustering, homography, stats — written and documented
-- [x] Architecture + detector-internals explainers
+- [x] Architecture, detector-internals, concepts and ground-truth explainers
 - [x] Class-resolution and team-caching bugs fixed
-- [ ] Run end-to-end on real soccer footage
-- [ ] Fine-tuned player/ball/referee detector (Roboflow football dataset)
-- [ ] Ball tracking — expect this to be the hard part (~10 px, blurred, occluded)
-- [ ] Learned pitch keypoints, so calibration works on any broadcast without clicking
+- [x] **Run end-to-end** — 1500 frames of FC 26, annotated video out
+- [x] **Fine-tuned player/ball/goalkeeper/referee detector** — per-class AP above
+- [x] **Goalkeepers and referees excluded from clustering** (structural, not tuning)
+- [x] Homography reports its own reprojection error in metres, with RANSAC at 5+ points
+- [ ] Ball tracking — AP50 0.499 is not good enough to trust possession
+- [ ] Camera-motion compensation, or re-ID, to stop track fragmentation
+- [ ] HOTA against SoccerNet ground truth, replacing the track-length proxy
+- [ ] Learned pitch keypoints, so calibration works without clicking
 - [ ] Demo video + writeup
