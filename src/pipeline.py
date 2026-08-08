@@ -22,7 +22,9 @@ from homography import PitchMapper, draw_minimap
 from team_cluster import TeamClassifier
 
 OUT = Path(__file__).parent.parent / "outputs"
-TEAM_COLORS = sv.ColorPalette.from_hex(["#ff5050", "#5050ff", "#ffd700"])
+# team 0, team 1, goalkeeper, referee -- four roles, four colours, so a keeper is
+# visibly a keeper rather than silently absorbed into whichever team it landed in.
+TEAM_COLORS = sv.ColorPalette.from_hex(["#ff5050", "#5050ff", "#ffd700", "#22c55e"])
 
 # Resolve classes BY NAME, never by hardcoded index. A COCO checkpoint puts `person`
 # at 0; a fine-tuned soccer checkpoint typically orders classes alphabetically, which
@@ -30,9 +32,20 @@ TEAM_COLORS = sv.ColorPalette.from_hex(["#ff5050", "#5050ff", "#ffd700"])
 # a squad of players and still emits a full set of plausible-looking statistics.
 # This is the same mistake that invalidated Traffic Lens's baseline -- see LEARNINGS
 # in that repo, and section 1 of walkthrough.html here.
-PLAYER_NAMES = {"player", "person", "goalkeeper", "goalkeepers"}
+# OUTFIELD players only. `goalkeeper` deliberately does NOT appear here: k-means with
+# k=2 cannot represent a third and fourth kit, so a keeper in the clustering input is
+# forced into an outfield team no matter how the clustering is tuned. Detecting keepers
+# as their own class and excluding them from the fit is a STRUCTURAL fix -- it changes
+# what the model is asked to explain, rather than tuning a model that cannot be right.
+# `person` stays because a COCO checkpoint has no finer distinction to offer.
+PLAYER_NAMES = {"player", "person"}
+GOALKEEPER_NAMES = {"goalkeeper", "goalkeepers", "keeper", "gk"}
 BALL_NAMES = {"ball", "sports ball", "football", "soccer ball"}
-REFEREE_NAMES = {"referee", "refere"}
+REFEREE_NAMES = {"referee", "refere", "referees", "umpire"}
+
+# Rendering roles. Teams 0/1 come from clustering; keepers and referees are known from
+# the detector and never guessed.
+ROLE_TEAM0, ROLE_TEAM1, ROLE_GK, ROLE_REF = 0, 1, 2, 3
 
 
 def class_ids_for(model, names: set) -> list:
@@ -126,14 +139,25 @@ def process_video(
         model = load_model(weights)
 
     player_ids = class_ids_for(model, PLAYER_NAMES)
+    gk_ids = class_ids_for(model, GOALKEEPER_NAMES)
     ball_ids = class_ids_for(model, BALL_NAMES)
     ref_ids = class_ids_for(model, REFEREE_NAMES)
     if not player_ids:
         raise ValueError(f"no player-like class in this model's labels: {model.names}")
+
+    # Everyone worth tracking. On a COCO checkpoint gk_ids and ref_ids are empty and
+    # this collapses to `person`, i.e. exactly the previous behaviour -- keepers and
+    # referees are simply indistinguishable there, which is a limitation of the
+    # weights rather than something the pipeline can fix.
+    tracked_ids = player_ids + gk_ids + ref_ids
     if verbose:
-        print(f"players -> {[model.names[i] for i in player_ids]}"
-              f"  ball -> {[model.names[i] for i in ball_ids] or 'not in this model'}"
-              f"  refs -> {[model.names[i] for i in ref_ids] or 'not in this model'}")
+        print(f"outfield -> {[model.names[i] for i in player_ids]}"
+              f"  keepers -> {[model.names[i] for i in gk_ids] or 'not in this model'}"
+              f"  refs -> {[model.names[i] for i in ref_ids] or 'not in this model'}"
+              f"  ball -> {[model.names[i] for i in ball_ids] or 'not in this model'}")
+        if not gk_ids:
+            print("  NOTE: no goalkeeper class -- keepers fall into the outfield "
+                  "clustering and k=2 will misassign them. Fine-tuned weights fix this.")
 
     info = sv.VideoInfo.from_video_path(source)
     fps = info.fps
@@ -170,6 +194,8 @@ def process_video(
     # `fit_frames` is the number of frames worth scanning per ~6 expected players.
     # It used to be floored at 120, which silently made every value <= 20 -- including
     # the default -- behave identically, so the parameter did nothing at all.
+    # OUTFIELD only. Fitting on keeper or referee crops is what forces k=2 to explain
+    # four kits with two clusters.
     fit_crops = collect_crops(model, source, player_ids, target=200,
                               max_scan=max(fit_frames, 1) * 6,
                               imgsz=imgsz, conf=conf, verbose=verbose)
@@ -200,7 +226,7 @@ def process_video(
             result = model(frame, conf=conf, imgsz=imgsz, verbose=False)[0]
             all_det = sv.Detections.from_ultralytics(result)
 
-            det = all_det[np.isin(all_det.class_id, player_ids)]
+            det = all_det[np.isin(all_det.class_id, tracked_ids)]
             # YOLO26 is NMS-free and should not emit overlapping boxes for one object,
             # but measured on FC26 footage 8.6% of detection pairs overlapped at
             # IoU > 0.6. Each spurious box becomes its own track, which is a direct
@@ -228,17 +254,28 @@ def process_video(
             # Vote instead: keep classifying until a track has `team_votes_target`
             # observations, then freeze the majority. Costs a few extra histograms
             # per track, which is nothing next to the detector.
-            voting = [j for j, tid in enumerate(det.tracker_id)
-                      if sum(team_votes[tid].values()) < team_votes_target]
+            # Role comes from the detector, never from clustering. A keeper is a keeper
+            # because the model said so; only outfield players get a guessed team.
+            is_gk = np.isin(det.class_id, gk_ids) if gk_ids else np.zeros(len(det), bool)
+            is_ref = np.isin(det.class_id, ref_ids) if ref_ids else np.zeros(len(det), bool)
+            is_outfield = ~(is_gk | is_ref)
+
+            voting = [j for j in np.flatnonzero(is_outfield)
+                      if sum(team_votes[det.tracker_id[j]].values()) < team_votes_target]
             if voting:
                 crops = crops_from(frame, det[np.array(voting)])
                 for j, t in zip(voting, teams.predict(crops)):
                     team_votes[det.tracker_id[j]][int(t)] += 1
 
-            for tid in det.tracker_id:
-                v = team_votes[tid]
-                team_of[tid] = max(v, key=v.get) if v else 0
-            team_ids = np.array([team_of.get(t, 0) for t in det.tracker_id], dtype=int)
+            for j, tid in enumerate(det.tracker_id):
+                if is_gk[j]:
+                    team_of[tid] = ROLE_GK
+                elif is_ref[j]:
+                    team_of[tid] = ROLE_REF
+                else:
+                    v = team_votes[tid]
+                    team_of[tid] = max(v, key=v.get) if v else ROLE_TEAM0
+            team_ids = np.array([team_of.get(t, ROLE_TEAM0) for t in det.tracker_id], dtype=int)
 
             for tid in det.tracker_id:
                 seen_frames[tid] += 1
@@ -278,9 +315,13 @@ def process_video(
 
                 # possession = team of the player nearest the ball, with hysteresis
                 # so contested balls don't make the stat flicker every frame
-                if ball_xy is not None:
+                if ball_xy is not None and is_outfield.any():
                     ball_m = mapper.to_pitch(np.array([ball_xy]))[0]
                     d = np.linalg.norm(pitch_pos - ball_m, axis=1)
+                    # A referee standing near the ball is not possession, and a keeper
+                    # has no team assigned -- restrict the nearest-player search to
+                    # outfield players, who are the only ones with an attributable team.
+                    d = np.where(is_outfield, d, np.inf)
                     poss_hist.append(int(team_ids[int(np.argmin(d))]))
                     if len(poss_hist) == poss_hist.maxlen:
                         vals = list(poss_hist)
@@ -324,9 +365,19 @@ def process_video(
         "ball_class_available": bool(ball_ids),
         "weights": getattr(getattr(model, "ckpt_path", None), "name", None) or str(weights),
         "classes_detected": {
-            "players": [model.names[i] for i in player_ids],
-            "ball": [model.names[i] for i in ball_ids],
+            "outfield": [model.names[i] for i in player_ids],
+            "goalkeeper": [model.names[i] for i in gk_ids],
             "referee": [model.names[i] for i in ref_ids],
+            "ball": [model.names[i] for i in ball_ids],
+        },
+        # Whether keepers were kept out of the clustering, or folded into it because
+        # the weights have no goalkeeper class. Changes how much to trust team labels.
+        "goalkeepers_excluded_from_clustering": bool(gk_ids),
+        "roles_tracked": {
+            "team_0": sum(1 for v in team_of.values() if v == ROLE_TEAM0),
+            "team_1": sum(1 for v in team_of.values() if v == ROLE_TEAM1),
+            "goalkeeper": sum(1 for v in team_of.values() if v == ROLE_GK),
+            "referee": sum(1 for v in team_of.values() if v == ROLE_REF),
         },
         "top_distance_m": [{"id": int(t), "metres": round(d, 1)} for t, d in top],
         "top_speed_kmh": [

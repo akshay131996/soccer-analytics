@@ -70,7 +70,7 @@ print("\nweights ->", best)
 
 # ---------------------------------------------------------------- per-class metrics
 m = YOLO(best)
-metrics = m.val(data=DATA, imgsz=1280, split="valid")
+metrics = m.val(data=DATA, imgsz=1280, split="val")
 
 rows = []
 print("\n{:<14}{:>9}{:>10}".format("class", "AP50", "AP50-95"))
